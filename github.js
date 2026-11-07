@@ -377,6 +377,28 @@ export function registerGithub(app, h) {
       });
     } catch (e) { fail(r, e); }
   });
+  // Avisos para la pantalla principal: invitaciones pendientes y proyectos de LJtex que alguien
+  // te compartió (invitación ya aceptada) pero que todavía no has abierto en esta computadora
+  app.get("/api/github/shared", async (q, r) => {
+    if (!isLocal(q)) return r.json({connected: false, reason: "remote"});
+    const c = readConf();
+    if (!c.token) return r.json({connected: false});
+    try {
+      const [inv, repos] = await Promise.all([
+        call(c.token, "GET", "/user/repository_invitations?per_page=100", null, 15000).catch(() => []),
+        call(c.token, "GET", "/user/repos?per_page=100&sort=updated&affiliation=collaborator", null, 15000).catch(() => []),
+      ]);
+      const linked = new Set(db.prepare("select owner, repo from gh_links").all().map(x => `${x.owner}/${x.repo}`.toLowerCase()));
+      const me = String(c.login || "").toLowerCase();
+      r.json({
+        connected: true,
+        invitations: (inv || []).map(x => ({id: x.id, full: x.repository?.full_name, from: x.inviter?.login, name: /^Proyecto de LJtex: (.+)$/.exec(x.repository?.description || "")?.[1] || null})),
+        unopened: (repos || [])
+          .filter(x => x.owner?.login?.toLowerCase() !== me && !linked.has(x.full_name.toLowerCase()) && /^Proyecto de LJtex: /.test(x.description || ""))
+          .map(x => ({full: x.full_name, from: x.owner?.login, name: /^Proyecto de LJtex: (.+)$/.exec(x.description)[1]})),
+      });
+    } catch (e) { r.json({connected: true, invitations: [], unopened: [], error: e.message}); }
+  });
   app.post("/api/github/invitations/:id/accept", async (q, r) => {
     if (!local(q, r)) return;
     try { await call(token(), "PATCH", `/user/repository_invitations/${encodeURIComponent(q.params.id)}`); r.json({ok: true}); }

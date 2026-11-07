@@ -181,6 +181,47 @@ async function ghOpen() {
   });
 }
 
+// Al abrir un proyecto recién creado se pregunta si se quiere respaldar en GitHub
+const OFFER = "ljtexOfrecerGitHub";
+const offerGh = id => { try { if (id) sessionStorage.setItem(OFFER, id); } catch {} };
+const takeOffer = id => { try { if (sessionStorage.getItem(OFFER) !== id) return false; sessionStorage.removeItem(OFFER); return true; } catch { return false; } };
+
+// ---------- Avisos en la pantalla principal: proyectos que te compartieron por GitHub ----------
+const HIDDEN = "ghAvisosOcultos";
+async function ghNotices() {
+  const box = $("ghav"); if (!box) return;
+  const r = await api("/github/shared").catch(() => null);
+  if (!$("ghav") || !r?.connected) return;
+  const hidden = new Set(lsGet(HIDDEN, []));
+  const items = [
+    ...(r.invitations || []).map(i => ({key: "inv:" + i.id, inv: i.id, full: i.full, from: i.from, name: i.name})),
+    ...(r.unopened || []).map(u => ({key: "repo:" + u.full.toLowerCase(), full: u.full, from: u.from, name: u.name})),
+  ].filter(x => x.full && !hidden.has(x.key));
+  box.innerHTML = items.map(x => `<div class="ghav" data-k="${esc(x.key)}">${ico("sync")}
+    <span><b>${esc(x.from || "Alguien")}</b> te compartió ${x.name ? `el proyecto <b>«${esc(x.name)}»</b>` : `el repositorio <b>${esc(x.full)}</b>`} por GitHub${x.inv ? "" : " · ya aceptaste la invitación, pero aún no lo abres aquí"}.<small class="ghavm"></small></span>
+    <button class="pr" data-op="${esc(x.full)}"${x.inv ? ` data-inv="${esc(x.inv)}"` : ""}>${x.inv ? "Aceptar y abrir" : "Abrir en LJtex"}</button>
+    <button class="ghavx" data-hide title="Ocultar este aviso (lo sigues encontrando en «Abrir desde GitHub»)" aria-label="Ocultar aviso">×</button></div>`).join("");
+}
+function ghNoticeClicks() {
+  $("ghav").onclick = async e => {
+    const row = e.target.closest(".ghav"); if (!row) return;
+    if (e.target.closest("[data-hide]")) { lsSet(HIDDEN, [...new Set([...lsGet(HIDDEN, []), row.dataset.k])].slice(-200)); row.remove(); return; }
+    const b = e.target.closest("[data-op]"); if (!b) return;
+    const msg = row.querySelector(".ghavm"), btns = row.querySelectorAll("button");
+    const bad = t => { btns.forEach(x => x.disabled = false); msg.classList.add("bad"); msg.textContent = t; };
+    btns.forEach(x => x.disabled = true); msg.classList.remove("bad");
+    if (b.dataset.inv) {
+      msg.textContent = "Aceptando la invitación…";
+      const a = await api(`/github/invitations/${encodeURIComponent(b.dataset.inv)}/accept`, {method: "POST"}).catch(() => ({error: "No se pudo contactar con el servidor."}));
+      if (a.error) return bad(a.error);
+    }
+    msg.textContent = `Descargando ${b.dataset.op}…`;
+    const r = await api("/github/clone", {method: "POST", body: {repo: b.dataset.op}}).catch(() => ({error: "No se pudo contactar con el servidor."}));
+    if (r.error) return bad(r.error);
+    location.hash = "#/p/" + r.id;
+  };
+}
+
 // ---------- .zip: descargar / importar ----------
 const slug = n => String(n || "proyecto").replace(/[\\/:*?"<>|]+/g, "_").trim().slice(0, 80) || "proyecto";
 function saveBlob(blob, fileName) {
@@ -207,6 +248,7 @@ async function importZip(file) {
   } catch { j = {error: "No se pudo contactar con el servidor."}; }
   toast.remove();
   if (j.error) return alert(j.error);
+  offerGh(j.id);
   const extra = (j.skipped?.length || j.renamed?.length || j.notes?.length);
   if (!extra) { location.hash = "#/p/" + j.id; return; }
   modal(`<h3>Proyecto importado: «${esc(j.name)}»</h3><p>${j.files} ${j.files === 1 ? "archivo" : "archivos"} (${j.text} de texto editable).</p>
@@ -222,17 +264,18 @@ async function importZip(file) {
 async function home() {
   $("app").innerHTML = `<div class="home"><header class="brand">${logoSvg(64)}<div><div class="wm">LJ<i>tex</i></div><small>Tu editor de LaTeX, en tu propia computadora</small></div></header>
     <div class="hrow"><h1>Mis proyectos</h1><button id="np" class="pr">Nuevo proyecto</button> <button id="ip">Importar .zip</button> <button id="gop" title="Abrir un proyecto guardado en GitHub (tuyo o de un coautor que te invitó)">Abrir desde GitHub</button> <button class="dk gh" id="dkh"></button></div><input id="if" type="file" accept=".zip,application/zip" hidden>
+    <div id="ghav"></div>
     <div class="hb"><input id="hq" type="search" placeholder="Buscar por nombre o etiqueta…" aria-label="Buscar proyectos"><label><input type="checkbox" id="hg"> Agrupar por etiqueta</label></div>
     <div id="tf" class="tf"></div><div id="pl"></div></div>`;
   $("np").onclick = async () => {
     const ts = await api("/templates");
-    if (!Array.isArray(ts) || !ts.length) { const n = prompt("Nombre del proyecto"); if (n === null) return; location.hash = "#/p/" + (await api("/projects", {method: "POST", body: {name: n}})).id; return; }
+    if (!Array.isArray(ts) || !ts.length) { const n = prompt("Nombre del proyecto"); if (n === null) return; const np = await api("/projects", {method: "POST", body: {name: n}}); offerGh(np.id); location.hash = "#/p/" + np.id; return; }
     modal(`<h3>Nuevo proyecto</h3><label>Nombre<br><input id="pn" class="pnin" placeholder="Sin título" maxlength="80"></label>
       <h4>Plantilla</h4><div class="tpls">${ts.map((t, i) => `<label class="tp"><input type="radio" name="tp" value="${esc(t.id)}"${i ? "" : " checked"}><span><b>${esc(t.name)}</b><small>${t.files.length} ${t.files.length === 1 ? "archivo" : "archivos"}</small></span></label>`).join("")}</div>
       <div class="acts"><button id="pc">Cancelar</button><button id="pk" class="pr">Crear</button></div>`, (md, close) => {
       const go = async () => {
         const tp = md.querySelector("input[name=tp]:checked")?.value, n = md.querySelector("#pn").value.trim() || "Sin título";
-        close(); location.hash = "#/p/" + (await api("/projects", {method: "POST", body: {name: n, template: tp}})).id;
+        close(); const np = await api("/projects", {method: "POST", body: {name: n, template: tp}}); offerGh(np.id); location.hash = "#/p/" + np.id;
       };
       md.querySelector("#pc").onclick = close; md.querySelector("#pk").onclick = go;
       md.querySelector("#pn").onkeydown = e => { if (e.key === "Enter") go(); };
@@ -241,6 +284,8 @@ async function home() {
   };
   $("ip").onclick = () => $("if").click();
   $("gop").onclick = ghOpen;
+  ghNoticeClicks(); ghNotices();
+  { const iv = setInterval(ghNotices, 120000), prev = cleanup; cleanup = () => { prev(); clearInterval(iv); }; }
   $("dkh").onclick = toggleTheme; applyTheme();
   $("if").onchange = e => { const f = e.target.files[0]; e.target.value = ""; importZip(f); };
   // Arrastrar un .zip a la página
@@ -505,7 +550,17 @@ async function project(id) {
   };
   async function ghRefresh() { ghInfo = await api(`/projects/${id}/github`).catch(() => null); ghPaint(); if (ghInfo?.linked) ghCheck(); }
   async function ghCheck() { const c = await api(`/projects/${id}/github/check`).catch(() => null); if (c?.linked) { ghInfo.last = c.last; ghPaint(c); } }
-  ghRefresh();
+  ghRefresh().then(() => { if (takeOffer(id) && ghInfo && !ghInfo.linked && ghInfo.reason !== "remote" && $("ghb")) ghOffer(); });
+  function ghOffer() {
+    modal(`<h3>¿Respaldar este proyecto en GitHub?</h3>
+      <p>Así tendrás una copia segura en tu cuenta de GitHub, podrás abrirlo desde otra computadora e invitar a coautores para escribirlo juntos.</p>
+      <p class="rfn">Puedes hacerlo más tarde con el botón <b>GitHub</b> de la barra de arriba.</p>
+      <div class="acts"><button id="gfn">Ahora no</button><button id="gfy" class="pr">Sí, respaldar en GitHub</button></div>`, (md, close) => {
+      md.querySelector("#gfn").onclick = close;
+      md.querySelector("#gfy").onclick = () => { close(); ghSetup(); };
+      md.querySelector("#gfy").focus();
+    });
+  }
   const ghIv = setInterval(() => { if (ghInfo?.linked && $("ghb")) ghCheck(); }, 120000);
   { const prev = cleanup; cleanup = () => { prev(); clearInterval(ghIv); }; }
   const MARKS = "%<<<<<<< CONFLICTO (LJtex) · tu versión:\n   … tu texto …\n%======= la versión que llegó de GitHub:\n   … el texto de tu coautor …\n%>>>>>>> fin del conflicto · deja la versión buena y borra las tres líneas de marca";
