@@ -326,11 +326,23 @@ async function importZip(file) {
 }
 
 async function home() {
-  $("app").innerHTML = `<div class="home"><header class="brand">${logoSvg(64)}<div><div class="wm">LJ<i>tex</i></div><small>Tu editor de LaTeX, en tu propia computadora${(() => { const b = UPD?.info(); return b?.time ? ` · versión del ${esc(fechaVer(b.time))}` : ""; })()}</small></div></header>
-    <div class="hrow"><h1>Mis proyectos</h1><button id="np" class="pr">Nuevo proyecto</button> <button id="ip">Importar .zip</button> <button id="gop" title="Abrir un proyecto guardado en GitHub (tuyo o de un coautor que te invitó)">Abrir desde GitHub</button> ${UPD ? '<button class="gh" id="upb" title="Buscar una versión nueva de LJtex en GitHub">Buscar actualizaciones</button>' : ""}<button class="dk gh" id="dkh"></button></div><input id="if" type="file" accept=".zip,application/zip" hidden>
+  const ver = UPD?.info();
+  const ghMark = '<svg class="ic" width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>';
+  $("app").innerHTML = `<div class="home">
+    <header class="hhead">
+      <div class="brand">${logoSvg(64)}<div><div class="wm">LJ<i>tex</i></div><small>Tu editor de LaTeX, en tu propia computadora</small></div></div>
+      <div class="hutil">${UPD ? `<button class="gh" id="upb" title="Buscar una versión nueva de LJtex en GitHub">${ico("sync", 14)}<span>Buscar actualizaciones</span></button>` : ""}<button class="dk gh" id="dkh"></button></div>
+    </header>
     <div id="upd"></div><div id="ghav"></div>
-    <div class="hb"><input id="hq" type="search" placeholder="Buscar por nombre o etiqueta…" aria-label="Buscar proyectos"><label><input type="checkbox" id="hg"> Agrupar por etiqueta</label></div>
-    <div id="tf" class="tf"></div><div id="pl"></div></div>`;
+    <div class="hrow"><h1>Mis proyectos<span class="hcount" id="hcount"></span></h1>
+      <div class="hact">
+        <button id="ip" title="Importar un proyecto en .zip (por ejemplo, descargado de Overleaf)">${ico("upload", 15)}Importar .zip</button>
+        <button id="gop" title="Abrir un proyecto guardado en GitHub (tuyo o de un coautor que te invitó)">${ghMark}Abrir desde GitHub</button>
+        <button id="np" class="pr">${ico("plus", 15)}Nuevo proyecto</button>
+      </div></div><input id="if" type="file" accept=".zip,application/zip" hidden>
+    <div class="hb"><label class="hsearch">${ico("search", 15)}<input id="hq" type="search" placeholder="Buscar por nombre o etiqueta…" aria-label="Buscar proyectos"></label><label class="hgrp"><input type="checkbox" id="hg"> Agrupar por etiqueta</label></div>
+    <div id="tf" class="tf"></div><div id="pl"></div>
+    ${ver?.time ? `<footer class="hfoot">LJtex · versión del ${esc(fechaVer(ver.time))}</footer>` : ""}</div>`;
   $("np").onclick = async () => {
     const ts = await api("/templates");
     if (!Array.isArray(ts) || !ts.length) { const n = prompt("Nombre del proyecto"); if (n === null) return; const np = await api("/projects", {method: "POST", body: {name: n}}); offerGh(np.id); location.hash = "#/p/" + np.id; return; }
@@ -378,6 +390,7 @@ async function home() {
     const tags = allTags();
     if (tag && tag !== NONE && !tags.some(t => norm(t.t) === norm(tag))) tag = "";          // la etiqueta ya no existe
     const noTag = ps.filter(p => !(p.tags || []).length).length;
+    if ($("hcount")) $("hcount").textContent = ps.length || "";
     $("tf").innerHTML = tags.length ? `<button class="tf1${tag === "" ? " on" : ""}" data-f="">Todos <small>${ps.length}</small></button>`
       + tags.map(t => `<button class="tf1${norm(tag) === norm(t.t) ? " on" : ""}" style="--h:${tagColor(t.t)}" data-f="${esc(t.t)}">${esc(t.t)} <small>${t.n}</small></button>`).join("")
       + (noTag && noTag < ps.length ? `<button class="tf1${tag === NONE ? " on" : ""}" data-f="${NONE}">Sin etiqueta <small>${noTag}</small></button>` : "") : "";
