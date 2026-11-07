@@ -6,6 +6,7 @@ const {join} = require("path");
 const os = require("os");
 const crypto = require("crypto");
 const http = require("http");
+const updater = require("./update.cjs");
 
 const TOKEN = crypto.randomBytes(18).toString("hex");   // clave interna: nadie la escribe, cambia en cada arranque
 const PORT = 3000;
@@ -75,6 +76,20 @@ addEventListener("keydown",e=>{if(e.key==="Enter")o.onclick();if(e.key==="Escape
   w.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html)); w.once("ready-to-show", () => w.show());
 });
 
+// Actualizaciones (botón «Buscar actualizaciones» y menú LJtex)
+ipcMain.handle("update-check", async () => { try { return await updater.check(); } catch (e) { return {error: e.message, needToken: !!e.needToken}; } });
+ipcMain.handle("update-install", async e => {
+  try {
+    const r = await updater.install((phase, frac) => { if (!e.sender.isDestroyed()) e.sender.send("update-progress", phase, frac); });
+    if (!r.ready) return r;                                    // p. ej. se abrió el .dmg para instalarlo a mano
+    if (!(await canClose())) return {cancelled: true};         // la persona decidió quedarse (p. ej. cambios sin subir a GitHub)
+    r.run(); closeOk = true; app.quit();                       // se cierra; el script pone la versión nueva y la abre
+    return {restarting: true};
+  } catch (err) { return {error: err.message, needToken: !!err.needToken}; }
+});
+ipcMain.on("build-info", e => { e.returnValue = updater.current(); });
+const askUpdate = () => { if (win && !win.isDestroyed()) win.webContents.executeJavaScript("window.ljtexCheckUpdates && window.ljtexCheckUpdates(true)", true).catch(() => {}); };
+
 function openWindow() {
   win = new BrowserWindow({width: 1500, height: 950, title: "LJtex", backgroundColor: "#f4f6fb",
     webPreferences: {preload: join(__dirname, "preload.cjs"), contextIsolation: false, nodeIntegration: false, sandbox: false}});
@@ -116,7 +131,9 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on("second-instance", () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
   app.whenReady().then(() => {
-    Menu.setApplicationMenu(Menu.buildFromTemplate([{role: "appMenu"}, {role: "fileMenu"}, {role: "editMenu"}, {role: "viewMenu"}, {role: "windowMenu"}]));
+    Menu.setApplicationMenu(Menu.buildFromTemplate([{label: app.name, submenu: [
+      {role: "about"}, {label: "Buscar actualizaciones…", click: askUpdate}, {type: "separator"},
+      {role: "services"}, {type: "separator"}, {role: "hide"}, {role: "hideOthers"}, {role: "unhide"}, {type: "separator"}, {role: "quit"}]}, {role: "fileMenu"}, {role: "editMenu"}, {role: "viewMenu"}, {role: "windowMenu"}]));
     launch();
   });
   app.on("window-all-closed", () => app.quit());

@@ -222,6 +222,70 @@ function ghNoticeClicks() {
   };
 }
 
+// ---------- Actualizaciones de la app de escritorio ----------
+// Los .dmg los publica GitHub (acción «Construir LJtex») en cada cambio; aquí se buscan, se descargan y se instalan.
+const UPD = window.ljtexUpdate || null;
+const fechaVer = t => new Date(t * 1000).toLocaleString("es", {day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit"});
+function updInstall(st) {
+  modal(`<h3>Hay una versión nueva de LJtex</h3>
+    <p>Tu versión: <b>${st.current ? esc(fechaVer(st.current.time)) : "sin fecha"}</b> · nueva: <b>${esc(fechaVer(st.latest.time))}</b></p>
+    ${st.latest.notes ? `<h4>Qué cambió</h4><pre class="updn">${esc(st.latest.notes)}</pre>` : ""}
+    <p class="rfn">LJtex descarga la versión nueva, se cierra y se vuelve a abrir solo. Tus proyectos no se tocan: viven fuera de la app.</p>
+    <div id="upm" class="rfm"></div><div class="updbar" hidden><i></i></div>
+    <div class="acts"><button id="upc">Ahora no</button><button id="upo" class="pr">Actualizar y reiniciar</button></div>`, (md, close) => {
+    const q = s => md.querySelector(s);
+    q("#upc").onclick = close; q("#upo").focus();
+    q("#upo").onclick = async () => {
+      q("#upo").disabled = q("#upc").disabled = true;
+      const bar = q(".updbar"); bar.hidden = false;
+      const off = UPD.onProgress((phase, f) => {
+        if (!q("#upm")) return;
+        q("#upm").textContent = phase === "Descargando" ? `Descargando… ${Math.round(f * 100)} %` : "Preparando la versión nueva…";
+        bar.firstChild.style.width = Math.round(f * 100) + "%";
+      });
+      q("#upm").className = "rfm"; q("#upm").textContent = "Conectando con GitHub…";
+      const r = await UPD.install().catch(e => ({error: String(e?.message || e)}));
+      off();
+      if (!q("#upm")) return;
+      if (r.restarting) { q("#upm").textContent = "Listo: LJtex se cierra y se abre con la versión nueva…"; return; }
+      q("#upo").disabled = q("#upc").disabled = false; bar.hidden = true;
+      if (r.cancelled) { q("#upm").textContent = "No se cerró LJtex. Puedes actualizar cuando quieras."; return; }
+      if (r.manual) { q("#upm").textContent = "Se abrió el instalador: arrastra LJtex a la carpeta Aplicaciones para reemplazar la versión anterior."; return; }
+      q("#upm").className = "rfm bad"; q("#upm").textContent = r.error || "No se pudo actualizar.";
+    };
+  });
+}
+// manual = el usuario lo pidió (botón o menú): siempre responde algo. Automático: solo avisa si hay versión nueva.
+window.ljtexCheckUpdates = async manual => {
+  if (!UPD) { if (manual) alert("Las actualizaciones automáticas solo funcionan en la app de escritorio de LJtex."); return; }
+  const st = await UPD.check().catch(e => ({error: String(e?.message || e)}));
+  if (!manual) {
+    try { localStorage.setItem("ultimaBusquedaAct", String(Date.now())); } catch {}
+    if (st.available && st.packaged) updBanner(st);
+    return;
+  }
+  if (st.error) {
+    return modal(`<h3>Buscar actualizaciones</h3><p class="rfm bad">${esc(st.error)}</p>
+      <div class="acts">${st.needToken ? '<button id="upg">Conectar con GitHub</button><span class="sp"></span>' : ""}<button id="upc" class="pr">Cerrar</button></div>`, (md, close) => {
+      md.querySelector("#upc").onclick = close;
+      if (md.querySelector("#upg")) md.querySelector("#upg").onclick = () => { close(); ghConnect(() => window.ljtexCheckUpdates(true)); };
+    });
+  }
+  if (!st.packaged) return alert("Esta copia de LJtex se abrió desde la terminal, no es la app instalada. Ahí se actualiza con git (bajar-de-github.sh).");
+  if (st.available) return updInstall(st);
+  modal(`<h3>Ya tienes la versión más reciente</h3>
+    <p>${st.current ? `Tu LJtex es la versión del <b>${esc(fechaVer(st.current.time))}</b>.` : "No se sabe de qué fecha es tu LJtex."}${!st.latest ? " Todavía no hay versiones publicadas en GitHub." : ""}</p>
+    <div class="acts"><button id="upc" class="pr">Cerrar</button></div>`, (md, close) => { md.querySelector("#upc").onclick = close; md.querySelector("#upc").focus(); });
+};
+function updBanner(st) {
+  const box = $("upd"); if (!box) return;
+  if (lsGet("actualizacionOculta", "") === st.latest.tag) return;
+  box.innerHTML = `<div class="ghav">${ico("download")}<span><b>Hay una versión nueva de LJtex</b> (del ${esc(fechaVer(st.latest.time))}).</span>
+    <button class="pr" id="upgo">Ver y actualizar</button><button class="ghavx" id="upx" title="Ocultar este aviso hasta la siguiente versión" aria-label="Ocultar aviso">×</button></div>`;
+  $("upgo").onclick = () => updInstall(st);
+  $("upx").onclick = () => { lsSet("actualizacionOculta", st.latest.tag); box.innerHTML = ""; };
+}
+
 // ---------- .zip: descargar / importar ----------
 const slug = n => String(n || "proyecto").replace(/[\\/:*?"<>|]+/g, "_").trim().slice(0, 80) || "proyecto";
 function saveBlob(blob, fileName) {
@@ -262,9 +326,9 @@ async function importZip(file) {
 }
 
 async function home() {
-  $("app").innerHTML = `<div class="home"><header class="brand">${logoSvg(64)}<div><div class="wm">LJ<i>tex</i></div><small>Tu editor de LaTeX, en tu propia computadora</small></div></header>
-    <div class="hrow"><h1>Mis proyectos</h1><button id="np" class="pr">Nuevo proyecto</button> <button id="ip">Importar .zip</button> <button id="gop" title="Abrir un proyecto guardado en GitHub (tuyo o de un coautor que te invitó)">Abrir desde GitHub</button> <button class="dk gh" id="dkh"></button></div><input id="if" type="file" accept=".zip,application/zip" hidden>
-    <div id="ghav"></div>
+  $("app").innerHTML = `<div class="home"><header class="brand">${logoSvg(64)}<div><div class="wm">LJ<i>tex</i></div><small>Tu editor de LaTeX, en tu propia computadora${(() => { const b = UPD?.info(); return b?.time ? ` · versión del ${esc(fechaVer(b.time))}` : ""; })()}</small></div></header>
+    <div class="hrow"><h1>Mis proyectos</h1><button id="np" class="pr">Nuevo proyecto</button> <button id="ip">Importar .zip</button> <button id="gop" title="Abrir un proyecto guardado en GitHub (tuyo o de un coautor que te invitó)">Abrir desde GitHub</button> ${UPD ? '<button class="gh" id="upb" title="Buscar una versión nueva de LJtex en GitHub">Buscar actualizaciones</button>' : ""}<button class="dk gh" id="dkh"></button></div><input id="if" type="file" accept=".zip,application/zip" hidden>
+    <div id="upd"></div><div id="ghav"></div>
     <div class="hb"><input id="hq" type="search" placeholder="Buscar por nombre o etiqueta…" aria-label="Buscar proyectos"><label><input type="checkbox" id="hg"> Agrupar por etiqueta</label></div>
     <div id="tf" class="tf"></div><div id="pl"></div></div>`;
   $("np").onclick = async () => {
@@ -285,6 +349,9 @@ async function home() {
   $("ip").onclick = () => $("if").click();
   $("gop").onclick = ghOpen;
   ghNoticeClicks(); ghNotices();
+  if ($("upb")) $("upb").onclick = () => window.ljtexCheckUpdates(true);
+  // Busca actualizaciones solo, como mucho una vez cada 6 horas
+  if (UPD && Date.now() - (+(() => { try { return localStorage.getItem("ultimaBusquedaAct"); } catch { return 0; } })() || 0) > 6 * 36e5) window.ljtexCheckUpdates(false);
   { const iv = setInterval(ghNotices, 120000), prev = cleanup; cleanup = () => { prev(); clearInterval(iv); }; }
   $("dkh").onclick = toggleTheme; applyTheme();
   $("if").onchange = e => { const f = e.target.files[0]; e.target.value = ""; importZip(f); };

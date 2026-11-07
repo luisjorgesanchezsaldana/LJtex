@@ -1,0 +1,54 @@
+# Cada vez que llega un cambio a main, GitHub construye LJtex en una Mac suya y publica los .dmg como «Release».
+# Desde ahí, el botón «Buscar actualizaciones» de LJtex descarga la versión nueva (y también se puede bajar a mano).
+name: Construir LJtex (.dmg)
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["README.md", "**/*.md", "Dockerfile", ".dockerignore"]
+  workflow_dispatch:   # botón «Run workflow» en la pestaña Actions, para construir a mano
+
+concurrency:          # si llegan dos cambios seguidos, solo se construye el último
+  group: dmg
+  cancel-in-progress: true
+
+permissions:
+  contents: write     # para publicar el Release
+
+jobs:
+  dmg:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci --no-audit --no-fund
+
+      - name: Pruebas (si fallan, no se publica nada)
+        run: npm test
+
+      - name: Construir los .dmg (chip Apple e Intel)
+        run: npm run dist
+
+      - name: Publicar el Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ct=$(git log -1 --format=%ct)
+          tag="build-${ct}-${GITHUB_SHA::7}"
+          fecha=$(TZ=America/Mexico_City date -r "$ct" "+%Y-%m-%d %H:%M")
+          git log -1 --format=%B > notas.txt
+          gh release create "$tag" release/*.dmg --target "$GITHUB_SHA" --title "LJtex $fecha" --notes-file notas.txt --latest
+
+      - name: Borrar Releases viejos (se conservan los 5 más recientes)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --limit 100 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[5:] | .[].tagName' \
+            | grep '^build-' | while read -r t; do gh release delete "$t" --yes --cleanup-tag; done || true

@@ -8,9 +8,9 @@
   "start": "node server.js",
   "test": "node --test test/*.test.js",
   "app": "node scripts/electron-native.mjs && electron .",
-  "dist": "node scripts/electron-native.mjs darwin arm64 x64 && vite build && electron-builder --mac dmg --arm64 --x64 --publish never",
-  "dist:arm": "node scripts/electron-native.mjs darwin arm64 && vite build && electron-builder --mac dmg --arm64 --publish never",
-  "dist:intel": "node scripts/electron-native.mjs darwin x64 && vite build && electron-builder --mac dmg --x64 --publish never",
+  "dist": "node scripts/build-info.mjs && node scripts/electron-native.mjs darwin arm64 x64 && vite build && electron-builder --mac dmg --arm64 --x64 --publish never",
+  "dist:arm": "node scripts/build-info.mjs && node scripts/electron-native.mjs darwin arm64 && vite build && electron-builder --mac dmg --arm64 --publish never",
+  "dist:intel": "node scripts/build-info.mjs && node scripts/electron-native.mjs darwin x64 && vite build && electron-builder --mac dmg --x64 --publish never",
   "native": "node scripts/electron-native.mjs"
  },
  "dependencies": {
@@ -51,6 +51,7 @@
   "y-codemirror.next": "^0.3.5"
  },
  "main": "electron/main.cjs",
+ "ljtexRepo": "luisjorgesanchezsaldana/LJtex",
  "version": "1.0.0",
  "description": "LJtex: editor de LaTeX local",
  "author": "Luis Jorge Sánchez",
@@ -74,6 +75,7 @@
    "dist/**",
    "public/**",
    "native/**",
+   "build-info.json",
    "package.json"
   ],
   "afterPack": "build/afterPack.cjs",

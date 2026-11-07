@@ -151,6 +151,12 @@ Protecciones incluidas:
 - Si iCloud crea copias en conflicto (`data 2.db`…), LJtex lo avisa al arrancar.
 
 ## App de escritorio (LJtex.app / .dmg)
+
+**Actualizaciones sin terminal.** En cada cambio que llega a `main`, la acción de GitHub *Construir LJtex* (`.github/workflows/dmg.yml`) corre las pruebas, genera los .dmg (chip Apple e Intel) en una Mac de GitHub y los publica como *Release* (se conservan los 5 más recientes). Dentro de LJtex, el botón **Buscar actualizaciones** de la pantalla de proyectos (o el menú *LJtex → Buscar actualizaciones…*) descarga la versión nueva, cierra LJtex, reemplaza la app y la vuelve a abrir. Además, LJtex lo revisa solo cada 6 horas y avisa en la pantalla principal.
+
+- Usa la misma clave de GitHub que la sincronización de proyectos. Cada persona necesita **acceso de lectura a este repositorio** (por ser privado): invítala como colaboradora en GitHub → *Settings → Collaborators*.
+- La primera vez hay que instalar a mano un .dmg que ya traiga el actualizador: descárgalo de la pestaña *Releases* del repositorio (o genera uno con `npm run dist`).
+- Cada app sabe de qué cambio se construyó por `build-info.json` (lo crea `scripts/build-info.mjs`).
 `npm run app` abre LJtex como app (ventana propia, sin navegador): arranca el servidor interno con una clave aleatoria (no tienes que escribir ninguna), y al cerrar la ventana lo detiene y sube los cambios a iCloud.
 `npm run dist` genera en `release/` los instaladores `LJtex-<versión>-arm64.dmg` (Mac con chip Apple) y `LJtex-<versión>-x64.dmg` (Intel); `npm run dist:arm` o `npm run dist:intel` generan solo uno. Hay que correrlo en una Mac. La app va firmada «ad hoc» (sin cuenta de Apple): la primera vez se abre con clic derecho → Abrir, o con `xattr -dr com.apple.quarantine /Applications/LJtex.app`.
 Se instala arrastrándola a Aplicaciones; se ancla al Dock como cualquier app. Necesita LaTeX (MacTeX/BasicTeX) y, para el asistente, Claude Code (`claude`) instalado e iniciado en esa Mac; la app busca ambos en los lugares habituales aunque se abra desde el Dock.

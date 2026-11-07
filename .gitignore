@@ -10,3 +10,4 @@ respaldos/
 .DS_Store
 release/
 native/
+build-info.json
