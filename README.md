@@ -27,6 +27,9 @@ Editor LaTeX colaborativo con historial y diff. Pantalla de proyectos (los modif
     TOKEN=una-clave-larga npm run dev      # http://localhost:5173
     # producción: npm run build && TOKEN=... npm start  (sirve en :3000, abre también el puerto 1234)
 
+- **Solo tu computadora**: por seguridad LJtex atiende únicamente a la propia Mac (127.0.0.1); nadie más en la misma red Wi-Fi puede entrar. Para usarlo como servidor de grupo, ábrelo a la red con `LJTEX_HOST=0.0.0.0 TOKEN=una-clave-larga npm start` (con la clave de ejemplo `cambia-esto` se niega a arrancar). El contenedor de Docker ya trae `LJTEX_HOST=0.0.0.0`.
+- **Pruebas**: `npm test` comprueba la mezcla de cambios con GitHub (que ninguna edición tuya ni de tu coautor se pierda). Córrelo antes de generar el .dmg si tocaste `github.js`.
+
 - Colaboración: Yjs + Hocuspocus (puerto 1234), documentos guardados en SQLite.
 - **Dónde están tus datos**: en `~/Manuscrito-datos/data.db`, fuera de esta carpeta, así que puedes reemplazar o borrar la carpeta del programa sin perder proyectos. Al primer arranque se copia ahí el `data.db` que hubiera en la carpeta. Haz copias de seguridad de ese archivo. Con otra ruta: `DB=/ruta/data.db`.
 - Versiones automáticas (máx. una cada 5 min) y con nombre, en la tabla `versions`.

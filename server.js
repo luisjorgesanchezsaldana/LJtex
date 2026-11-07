@@ -17,6 +17,14 @@ import {registerGithub} from "./github.js";
 import {acquireLock, checkIntegrity, conflictCopies, startBackups, syncStart, syncEnd} from "./datasync.js";
 
 const TOKEN = process.env.TOKEN || "cambia-esto";   // clave compartida del grupo
+// Por seguridad LJtex solo atiende a esta misma computadora. Para dar acceso a otras de la red (servidor de grupo,
+// Docker) arráncalo con LJTEX_HOST=0.0.0.0 y una clave propia en TOKEN.
+const HOST = process.env.LJTEX_HOST || "127.0.0.1";
+const ONLY_HERE = /^(127\.|::1$|localhost$)/i.test(HOST);
+if (!ONLY_HERE && TOKEN === "cambia-esto") {
+  console.error(`\nLJTEX_HOST=${HOST} abre LJtex a otras computadoras de la red, pero la clave sigue siendo la de ejemplo.\nElige una clave propia, por ejemplo:  TOKEN=una-clave-larga LJTEX_HOST=${HOST} npm start\n`);
+  process.exit(1);
+}
 // Los datos viven FUERA de la carpeta del programa, para que actualizar o reemplazar el código no los borre.
 // Por defecto: ~/Manuscrito-datos/data.db (se cambia con la variable DB).
 // LJTEX_DATA=<carpeta> usa esa carpeta (p. ej. en iCloud Drive) para compartir los datos entre varias Mac.
@@ -236,6 +244,7 @@ function ensureStats(project) {
 // Colaboración en tiempo real: un documento Yjs por archivo ("proyecto/ruta")
 const hp = Server.configure({
   port: 1234,
+  address: HOST,
   async onAuthenticate({token}) {
     const {t, n} = JSON.parse(token || "{}");
     if (t !== TOKEN) throw new Error("no autorizado");
@@ -948,4 +957,4 @@ registerBib(app, {db, who, okPath, clashes, getFile, getDocText, lastVersion, ad
 registerZotero(app, {db, who, okPath, clashes, getFile, getDocText, lastVersion, addVersion, flushPending, setDocText, takeSnapshot, touch, log, track});
 registerGithub(app, {db, who, okPath, clashes, getDocText, setDocText, flushPending, addVersion, deleteFile, takeSnapshot, touch, log});
 if (existsSync("dist")) app.use(express.static("dist"));
-app.listen(3000, () => console.log("API en :3000, colaboración en :1234"));
+app.listen(3000, HOST, () => console.log(`API en ${HOST}:3000, colaboración en ${HOST}:1234` + (ONLY_HERE ? " (solo esta computadora)" : " (abierto a la red)")));
