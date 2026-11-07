@@ -14,6 +14,18 @@ const pkg = () => readJson(join(app.getAppPath(), "package.json")) || {};
 const repo = () => pkg().ljtexRepo || "luisjorgesanchezsaldana/LJtex";
 const current = () => readJson(join(app.getAppPath(), "build-info.json"));
 const fail = (msg, extra = {}) => Object.assign(new Error(msg), extra);
+// Bitácora y resultado de la última actualización (el script de reemplazo escribe aquí después de que LJtex se cierra)
+const DIR = join(os.homedir(), ".ljtex");
+const LOG = join(DIR, "actualizacion.log"), STATUS = join(DIR, "actualizacion.json"), CACHE = join(DIR, "descargas");
+const log = msg => { try { fs.mkdirSync(DIR, {recursive: true}); fs.appendFileSync(LOG, `${new Date().toISOString()} ${msg}\n`); } catch {} };
+
+// Resultado de la última actualización, leído una sola vez al abrir LJtex
+function lastResult() {
+  const r = readJson(STATUS);
+  if (r) try { fs.rmSync(STATUS, {force: true}); } catch {}
+  if (r?.ok) try { fs.rmSync(CACHE, {recursive: true, force: true}); } catch {}   // ya instalada: borrar la descarga
+  return r;
+}
 
 // La carpeta LJtex.app que se está usando (null si se corre con `npm run app`, sin empaquetar)
 function bundlePath() {
@@ -67,18 +79,26 @@ async function install(progress = () => {}) {
     const asset = rel && (rel.assets || []).find(a => a.name.endsWith(`-${archName()}.dmg`));
     if (!asset) throw fail("La versión más reciente todavía no tiene el instalador para esta Mac. Intenta en unos minutos.");
 
-    // 1. Descargar el .dmg (GitHub redirige a un enlace temporal de descarga)
-    progress("Descargando", 0);
-    const r = await gh(`/repos/${repo()}/releases/assets/${asset.id}`, {headers: {Accept: "application/octet-stream"}});
-    const total = +r.headers.get("content-length") || asset.size || 0, dmg = join(work, "LJtex.dmg");
-    const out = fs.createWriteStream(dmg); let got = 0, last = 0;
-    for await (const chunk of r.body) {
-      got += chunk.length;
-      if (!out.write(chunk)) await new Promise(res => out.once("drain", res));
-      if (total && got - last > total / 100) { last = got; progress("Descargando", got / total); }
-    }
-    await new Promise((res, rej) => out.end(err => err ? rej(err) : res()));
-    if (asset.size && fs.statSync(dmg).size !== asset.size) throw fail("La descarga quedó incompleta. Revisa tu conexión e intenta de nuevo.");
+    // 1. Descargar el .dmg (GitHub redirige a un enlace temporal de descarga). Si ya se descargó antes completo, se reutiliza.
+    fs.mkdirSync(CACHE, {recursive: true});
+    const dmg = join(CACHE, `LJtex-${rel.tag_name}-${archName()}.dmg`);
+    const have = (() => { try { return fs.statSync(dmg).size; } catch { return -1; } })();
+    log(`instalar ${rel.tag_name} (${asset.name}) sobre ${bundle}`);
+    if (!(asset.size && have === asset.size)) {
+      progress("Descargando", 0);
+      const r = await gh(`/repos/${repo()}/releases/assets/${asset.id}`, {headers: {Accept: "application/octet-stream"}});
+      const total = +r.headers.get("content-length") || asset.size || 0, part = dmg + ".parcial";
+      const out = fs.createWriteStream(part); let got = 0, last = 0;
+      for await (const chunk of r.body) {
+        got += chunk.length;
+        if (!out.write(chunk)) await new Promise(res => out.once("drain", res));
+        if (total && got - last > total / 100) { last = got; progress("Descargando", got / total); }
+      }
+      await new Promise((res, rej) => out.end(err => err ? rej(err) : res()));
+      if (asset.size && fs.statSync(part).size !== asset.size) throw fail("La descarga quedó incompleta. Revisa tu conexión e intenta de nuevo.");
+      fs.renameSync(part, dmg);
+      log("descarga completa");
+    } else log("se reutiliza la descarga anterior");
 
     // 2. Sacar LJtex.app del .dmg
     progress("Preparando", 1);
@@ -95,9 +115,8 @@ async function install(progress = () => {}) {
     // 3. ¿Se puede reemplazar la app donde está? Si no (p. ej. Aplicaciones de otro usuario), se abre el .dmg para hacerlo a mano
     try { fs.accessSync(dirname(bundle), fs.constants.W_OK); fs.accessSync(bundle, fs.constants.W_OK); }
     catch {
-      const keep = join(os.homedir(), "Downloads", asset.name);
-      try { fs.copyFileSync(dmg, keep); } catch {}
-      shell.openPath(fs.existsSync(keep) ? keep : dmg);
+      log("sin permiso de escritura junto a la app: se abre el instalador");
+      shell.openPath(dmg);
       return {manual: true};
     }
 
@@ -105,24 +124,41 @@ async function install(progress = () => {}) {
     //    Si algo falla, deja la versión anterior en su lugar.
     const script = join(work, "actualizar.sh");
     fs.writeFileSync(script, `#!/bin/sh
-PID="$1"; OLD="$2"; NEW="$3"; WORK="$4"
+# Lo lanza LJtex justo antes de cerrarse: espera a que se cierre, pone la versión nueva y la vuelve a abrir.
+PID="$1"; OLD="$2"; NEW="$3"; WORK="$4"; TAG="$5"; DMG="$6"; LOG="$7"; STATUS="$8"
+log() { echo "$(date '+%Y-%m-%dT%H:%M:%S') $*" >> "$LOG"; }
 i=0; while kill -0 "$PID" 2>/dev/null && [ $i -lt 600 ]; do sleep 0.5; i=$((i+1)); done
 sleep 1
-rm -rf "$OLD.anterior"
-if mv "$OLD" "$OLD.anterior" && ditto "$NEW" "$OLD"; then
-  rm -rf "$OLD.anterior"
-else
-  rm -rf "$OLD"; mv "$OLD.anterior" "$OLD"
+log "LJtex cerrado; reemplazando $OLD"
+ok=0; how=""
+# 1) Reemplazo directo
+if mv "$OLD" "$OLD.anterior" 2>>"$LOG"; then
+  if ditto "$NEW" "$OLD" 2>>"$LOG"; then ok=1; how=directo; rm -rf "$OLD.anterior"
+  else rm -rf "$OLD"; mv "$OLD.anterior" "$OLD"; log "falló la copia; se restauró la versión anterior"; fi
+else log "macOS no dejó mover la app (Gestión de apps); se intenta con Finder"; fi
+# 2) Con Finder, que sí tiene permiso de modificar apps (macOS pide una vez permitir que LJtex controle Finder)
+if [ $ok = 0 ] && [ "$(basename "$NEW")" = "$(basename "$OLD")" ]; then
+  if osascript -e 'on run argv' -e 'tell application "Finder" to move (POSIX file (item 1 of argv) as alias) to (POSIX file (item 2 of argv) as alias) with replacing' -e 'end run' "$NEW" "$(dirname "$OLD")" >/dev/null 2>>"$LOG"; then
+    ok=1; how=finder
+  else log "Finder tampoco pudo reemplazarla"; fi
 fi
-xattr -dr com.apple.quarantine "$OLD" 2>/dev/null
+if [ $ok = 1 ]; then
+  log "versión nueva instalada ($how)"
+  xattr -dr com.apple.quarantine "$OLD" 2>/dev/null
+  printf '{"ok":true,"tag":"%s","how":"%s"}\\n' "$TAG" "$how" > "$STATUS"
+  rm -rf "$WORK"
+else
+  # 3) Último recurso: dejar la versión anterior, abrir el instalador ya descargado y explicar qué hacer
+  printf '{"ok":false,"tag":"%s","dmg":"%s"}\\n' "$TAG" "$DMG" > "$STATUS"
+  open "$DMG"
+fi
 open "$OLD"
-rm -rf "$WORK"
 `, {mode: 0o755});
-    return {ready: true, run: () => spawn("/bin/sh", [script, String(process.pid), bundle, fresh, work], {detached: true, stdio: "ignore"}).unref()};
+    return {ready: true, run: () => { log("cerrando LJtex para reemplazarla"); spawn("/bin/sh", [script, String(process.pid), bundle, fresh, work, rel.tag_name, dmg, LOG, STATUS], {detached: true, stdio: "ignore"}).unref(); }};
   } catch (e) {
     try { fs.rmSync(work, {recursive: true, force: true}); } catch {}
     throw e;
   } finally { installing = false; }
 }
 
-module.exports = {check, install, current};
+module.exports = {check, install, current, lastResult, openDmg: f => f && fs.existsSync(f) ? shell.openPath(f) : null};

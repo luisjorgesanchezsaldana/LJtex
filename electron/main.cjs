@@ -88,6 +88,8 @@ ipcMain.handle("update-install", async e => {
   } catch (err) { return {error: err.message, needToken: !!err.needToken}; }
 });
 ipcMain.on("build-info", e => { e.returnValue = updater.current(); });
+ipcMain.handle("update-last", () => updater.lastResult());
+ipcMain.handle("update-open-dmg", (e, f) => { updater.openDmg(f); });
 const askUpdate = () => { if (win && !win.isDestroyed()) win.webContents.executeJavaScript("window.ljtexCheckUpdates && window.ljtexCheckUpdates(true)", true).catch(() => {}); };
 
 function openWindow() {

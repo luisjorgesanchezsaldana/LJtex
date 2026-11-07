@@ -2651,3 +2651,23 @@ async function project(id) {
 }
 
 addEventListener("hashchange", route); route();
+
+// Al abrir: ¿cómo salió la última actualización?
+if (UPD?.lastResult) UPD.lastResult().then(r => {
+  if (!r) return;
+  if (r.ok) {
+    const b = UPD.info();
+    return modal(`<h3>LJtex se actualizó</h3><p>Ya tienes la versión ${b?.time ? `del <b>${esc(fechaVer(b.time))}</b>` : "más reciente"}.</p>
+      <div class="acts"><button id="upc" class="pr">Listo</button></div>`, (md, close) => { md.querySelector("#upc").onclick = close; md.querySelector("#upc").focus(); });
+  }
+  lsSet("actualizacionOculta", r.tag);   // no volver a ofrecer la misma versión en ciclo
+  if ($("upd")) $("upd").innerHTML = "";
+  modal(`<h3>Falta un paso para actualizar LJtex</h3>
+    <p>macOS no dejó que LJtex se reemplazara solo, así que seguiste en la versión anterior. La versión nueva ya está descargada y se abrió su instalador:</p>
+    <ol class="updsteps"><li>Cierra LJtex (⌘Q).</li><li>En la ventana del instalador, arrastra <b>LJtex</b> a la carpeta <b>Aplicaciones</b>.</li><li>Elige <b>Reemplazar</b> y vuelve a abrir LJtex.</li></ol>
+    <p class="rfn">Si macOS te preguntó si LJtex puede controlar Finder y respondiste que no, la próxima vez responde «Permitir» y se instalará solo.</p>
+    <div class="acts">${r.dmg ? '<button id="upd2">Abrir el instalador otra vez</button><span class="sp"></span>' : ""}<button id="upc" class="pr">Entendido</button></div>`, (md, close) => {
+    md.querySelector("#upc").onclick = close;
+    if (md.querySelector("#upd2")) md.querySelector("#upd2").onclick = () => UPD.openDmg(r.dmg);
+  });
+}).catch(() => {});

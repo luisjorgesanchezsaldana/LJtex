@@ -82,6 +82,9 @@
   "mac": {
    "category": "public.app-category.productivity",
    "icon": "build/icon.png",
+   "extendInfo": {
+    "NSAppleEventsUsageDescription": "LJtex le pide a Finder que reemplace la app cuando instalas una actualización."
+   },
    "identity": null,
    "target": [
     {
