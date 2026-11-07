@@ -10,14 +10,27 @@ const updater = require("./update.cjs");
 
 const TOKEN = crypto.randomBytes(18).toString("hex");   // clave interna: nadie la escribe, cambia en cada arranque
 const PORT = 3000;
-let server = null, win = null, quitting = false, output = "";
-let closeOk = false, asking = null;
-// Antes de cerrar, la ventana puede pedir algo (p. ej. sincronizar con GitHub). Devuelve false si la persona se queda.
-function canClose() {
-  if (closeOk || !win || win.isDestroyed()) return Promise.resolve(true);
-  if (!asking) asking = win.webContents.executeJavaScript("window.ljtexBeforeClose ? window.ljtexBeforeClose() : true", true)
-    .then(v => v !== false, () => true).finally(() => { asking = null; });
-  return asking;
+let server = null, quitting = false, output = "";
+// Cada pestaña es una ventana de LJtex agrupada con las pestañas nativas de macOS (tabbingIdentifier)
+const wins = new Set();
+const live = () => [...wins].filter(w => !w.isDestroyed());
+const cur = () => { const f = BrowserWindow.getFocusedWindow(); return f && wins.has(f) ? f : live().at(-1) || null; };
+// Antes de cerrar, cada pestaña puede pedir algo (p. ej. sincronizar con GitHub). Devuelve false si la persona se queda.
+const asking = new WeakMap();
+function canCloseWin(w) {
+  if (!w || w.isDestroyed() || w.ljClose) return Promise.resolve(true);
+  if (!asking.has(w)) asking.set(w, w.webContents.executeJavaScript("window.ljtexBeforeClose ? window.ljtexBeforeClose() : true", true)
+    .then(v => v !== false, () => true).finally(() => asking.delete(w)));
+  return asking.get(w);
+}
+// Para salir de LJtex se pregunta pestaña por pestaña (mostrando la que pregunta)
+async function canClose() {
+  for (const w of live()) {
+    if (w.ljClose) continue;
+    if (!w.isFocused()) { w.show(); w.focus(); }
+    if (!(await canCloseWin(w))) return false;
+  }
+  return true;
 }
 
 // Una app abierta desde el Dock no hereda el PATH de la terminal: sin esto no encontraría latexmk, claude, etc.
@@ -61,7 +74,8 @@ function stopServer() {
 // window.prompt() no existe en Electron: lo reemplazo por una ventanita propia (el código de la app sigue igual)
 ipcMain.on("cfg", e => { e.returnValue = {token: TOKEN, user: os.userInfo().username}; });
 ipcMain.on("prompt", (e, msg, def) => {
-  const w = new BrowserWindow({parent: win || undefined, modal: !!win, width: 460, height: 200, resizable: false, minimizable: false, maximizable: false, show: false,
+  const parent = BrowserWindow.fromWebContents(e.sender) || cur();
+  const w = new BrowserWindow({parent: parent || undefined, modal: !!parent, width: 460, height: 200, resizable: false, minimizable: false, maximizable: false, show: false,
     webPreferences: {nodeIntegration: true, contextIsolation: false}});
   w.setMenuBarVisibility(false);
   let answered = false;
@@ -83,28 +97,38 @@ ipcMain.handle("update-install", async e => {
     const r = await updater.install((phase, frac) => { if (!e.sender.isDestroyed()) e.sender.send("update-progress", phase, frac); });
     if (!r.ready) return r;                                    // p. ej. se abrió el .dmg para instalarlo a mano
     if (!(await canClose())) return {cancelled: true};         // la persona decidió quedarse (p. ej. cambios sin subir a GitHub)
-    r.run(); closeOk = true; app.quit();                       // se cierra; el script pone la versión nueva y la abre
+    r.run(); quitting = true; live().forEach(w => w.ljClose = true); stopServer().then(() => app.exit(0));   // se cierra; el script pone la versión nueva y la abre
     return {restarting: true};
   } catch (err) { return {error: err.message, needToken: !!err.needToken}; }
 });
 ipcMain.on("build-info", e => { e.returnValue = updater.current(); });
 ipcMain.handle("update-last", () => updater.lastResult());
 ipcMain.handle("update-open-dmg", (e, f) => { updater.openDmg(f); });
-const askUpdate = () => { if (win && !win.isDestroyed()) win.webContents.executeJavaScript("window.ljtexCheckUpdates && window.ljtexCheckUpdates(true)", true).catch(() => {}); };
+const askUpdate = () => { const w = cur(); if (w) w.webContents.executeJavaScript("window.ljtexCheckUpdates && window.ljtexCheckUpdates(true)", true).catch(() => {}); };
+// Pestañas: la página pide abrir otra (proyecto o pantalla principal) con ipc o con ⌘-clic en un enlace
+const BASE = `http://localhost:${PORT}/`;
+ipcMain.on("tab-open", (e, hash) => openWindow(BASE + (typeof hash === "string" && /^#\/?[\w\/-]*$/.test(hash) ? hash : ""), BrowserWindow.fromWebContents(e.sender)));
+const newTab = () => openWindow(BASE, cur());
 
-function openWindow() {
-  win = new BrowserWindow({width: 1500, height: 950, title: "LJtex", backgroundColor: "#f4f6fb",
+// Abre una ventana de LJtex; con «junto» se agrega como pestaña nueva de esa ventana
+function openWindow(url = BASE, junto = null) {
+  const w = new BrowserWindow({width: 1500, height: 950, title: "LJtex", backgroundColor: "#f4f6fb", tabbingIdentifier: "ljtex", show: false,
     webPreferences: {preload: join(__dirname, "preload.cjs"), contextIsolation: false, nodeIntegration: false, sandbox: false}});
-  win.loadURL(`http://localhost:${PORT}/`);
+  wins.add(w);
+  if (junto && !junto.isDestroyed() && typeof junto.addTabbedWindow === "function") junto.addTabbedWindow(w);
+  w.loadURL(url);
+  w.once("ready-to-show", () => { w.show(); w.focus(); });
   const local = u => /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(u);
-  win.webContents.setWindowOpenHandler(({url}) => { if (!local(url)) shell.openExternal(url); return {action: local(url) ? "allow" : "deny"}; });
-  win.webContents.on("will-navigate", (e, url) => { if (!local(url)) { e.preventDefault(); shell.openExternal(url); } });
-  win.on("close", e => {
-    if (closeOk || quitting) return;
+  // ⌘-clic o clic con la rueda en un proyecto: se abre en una pestaña nueva de LJtex (con todo lo que necesita la app)
+  w.webContents.setWindowOpenHandler(({url: u}) => { if (local(u)) openWindow(u, w); else shell.openExternal(u); return {action: "deny"}; });
+  w.webContents.on("will-navigate", (e, u) => { if (!local(u)) { e.preventDefault(); shell.openExternal(u); } });
+  w.on("close", e => {
+    if (w.ljClose || quitting) return;
     e.preventDefault();
-    canClose().then(ok => { if (ok && win) { closeOk = true; win.close(); } });
+    canCloseWin(w).then(ok => { if (ok && !w.isDestroyed()) { w.ljClose = true; w.close(); } });
   });
-  win.on("closed", () => { win = null; });
+  w.on("closed", () => wins.delete(w));
+  return w;
 }
 
 async function launch(extraEnv) {
@@ -131,11 +155,16 @@ async function launch(extraEnv) {
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on("second-instance", () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+  app.on("second-instance", () => { const w = cur(); if (w) { if (w.isMinimized()) w.restore(); w.focus(); } });
+  app.on("activate", () => { if (server && !live().length) openWindow(); });   // clic en el Dock sin ventanas abiertas
   app.whenReady().then(() => {
     Menu.setApplicationMenu(Menu.buildFromTemplate([{label: app.name, submenu: [
       {role: "about"}, {label: "Buscar actualizaciones…", click: askUpdate}, {type: "separator"},
-      {role: "services"}, {type: "separator"}, {role: "hide"}, {role: "hideOthers"}, {role: "unhide"}, {type: "separator"}, {role: "quit"}]}, {role: "fileMenu"}, {role: "editMenu"}, {role: "viewMenu"}, {role: "windowMenu"}]));
+      {role: "services"}, {type: "separator"}, {role: "hide"}, {role: "hideOthers"}, {role: "unhide"}, {type: "separator"}, {role: "quit"}]},
+      {label: "Archivo", submenu: [
+        {label: "Nueva pestaña", accelerator: "CmdOrCtrl+T", click: newTab},
+        {label: "Nueva ventana", accelerator: "CmdOrCtrl+N", click: () => openWindow()},
+        {type: "separator"}, {label: "Cerrar pestaña", accelerator: "CmdOrCtrl+W", role: "close"}]}, {role: "editMenu"}, {role: "viewMenu"}, {role: "windowMenu"}]));
     launch();
   });
   app.on("window-all-closed", () => app.quit());
@@ -143,7 +172,7 @@ else {
     if (quitting) return; e.preventDefault();
     canClose().then(ok => {
       if (!ok || quitting) return;   // se quedó en LJtex
-      closeOk = true; quitting = true;
+      quitting = true; live().forEach(w => w.ljClose = true);
       stopServer().then(() => app.exit(0));
     });
   });

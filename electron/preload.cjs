@@ -15,3 +15,5 @@ window.ljtexUpdate = {
   openDmg: f => ipcRenderer.invoke("update-open-dmg", f),
   info: () => { try { return ipcRenderer.sendSync("build-info"); } catch { return null; } },
 };
+// Pestañas nativas de macOS: abrir un proyecto (o la pantalla principal) en una pestaña nueva
+window.ljtexTabs = {open: hash => ipcRenderer.send("tab-open", hash || "")};

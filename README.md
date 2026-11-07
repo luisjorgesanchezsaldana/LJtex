@@ -152,6 +152,8 @@ Protecciones incluidas:
 
 ## App de escritorio (LJtex.app / .dmg)
 
+**Pestañas.** Cada proyecto puede abrirse en su propia pestaña (pestañas nativas de macOS, como en Safari): ⌘T abre una pestaña nueva, ⌘-clic en un proyecto lo abre en otra pestaña, y el botón junto al nombre del proyecto lo abre otra vez en una pestaña aparte (útil para ver dos archivos del mismo proyecto; lo que se escribe en una aparece al instante en la otra). Al salir, LJtex pregunta pestaña por pestaña si hay cambios sin subir a GitHub. Si dos pestañas compilan a la vez, la segunda espera su turno.
+
 **Actualizaciones sin terminal.** En cada cambio que llega a `main`, la acción de GitHub *Construir LJtex* (`.github/workflows/dmg.yml`) corre las pruebas, genera los .dmg (chip Apple e Intel) en una Mac de GitHub y los publica como *Release* (se conservan los 5 más recientes). Dentro de LJtex, el botón **Buscar actualizaciones** de la pantalla de proyectos (o el menú *LJtex → Buscar actualizaciones…*) descarga la versión nueva, cierra LJtex, reemplaza la app y la vuelve a abrir. Además, LJtex lo revisa solo cada 6 horas y avisa en la pantalla principal.
 
 - Usa la misma clave de GitHub que la sincronización de proyectos. Cada persona necesita **acceso de lectura a este repositorio** (por ser privado): invítala como colaboradora en GitHub → *Settings → Collaborators*.

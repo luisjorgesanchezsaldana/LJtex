@@ -864,7 +864,9 @@ function copyAux(from, to) {
 
 // Compilación: reconstruye todo el proyecto en una carpeta temporal y compila main.tex
 let busy = false;
-app.post("/api/compile", (q, r) => {
+app.post("/api/compile", async (q, r) => {
+  // Con varias pestañas abiertas es normal que dos pidan compilar a la vez: se espera turno (hasta 2 min) en lugar de rechazar
+  for (let t = 0; busy && t < 480; t++) await new Promise(res => setTimeout(res, 250));
   if (busy) return r.status(429).json({log: "Hay otra compilación en curso. Inténtalo de nuevo en unos segundos."});
   const {project, path, text} = q.body, only = typeof q.body.only === "string" ? q.body.only : null;
   const files = db.prepare("select path,kind,text,data from files where project=?").all(project);

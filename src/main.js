@@ -222,6 +222,11 @@ function ghNoticeClicks() {
   };
 }
 
+// ---------- Pestañas ----------
+// En la app de escritorio cada pestaña es una pestaña nativa de macOS; en el navegador, una pestaña del navegador.
+const openTab = (hash = "") => window.ljtexTabs ? window.ljtexTabs.open(hash) : window.open(location.pathname + hash, "_blank", "noopener");
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
+
 // ---------- Actualizaciones de la app de escritorio ----------
 // Los .dmg los publica GitHub (acción «Construir LJtex») en cada cambio; aquí se buscan, se descargan y se instalan.
 const UPD = window.ljtexUpdate || null;
@@ -326,6 +331,7 @@ async function importZip(file) {
 }
 
 async function home() {
+  document.title = "Mis proyectos · LJtex";
   const ver = UPD?.info();
   const ghMark = '<svg class="ic" width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>';
   $("app").innerHTML = `<div class="home">
@@ -418,7 +424,7 @@ async function home() {
   function menu(btn, p) {
     closePop();
     const pop = document.createElement("div"); pop.className = "pop";
-    pop.innerHTML = `<button data-a="open">Abrir</button><button data-a="dup">Duplicar…</button><button data-a="ren">Cambiar nombre…</button><button data-a="tag">Etiquetas…</button><button data-a="exp">Exportar .zip</button><button data-a="del" class="dn">Eliminar…</button>`;
+    pop.innerHTML = `<button data-a="open">Abrir</button><button data-a="tab">Abrir en una pestaña nueva <kbd>${MOD}clic</kbd></button><button data-a="dup">Duplicar…</button><button data-a="ren">Cambiar nombre…</button><button data-a="tag">Etiquetas…</button><button data-a="exp">Exportar .zip</button><button data-a="del" class="dn">Eliminar…</button>`;
     document.body.appendChild(pop);
     const r = btn.getBoundingClientRect();
     pop.style.top = Math.min(r.bottom + 4, innerHeight - pop.offsetHeight - 8) + "px";
@@ -426,6 +432,7 @@ async function home() {
     pop.onclick = async e => {
       const a = e.target.dataset.a; if (!a) return; closePop();
       if (a === "open") location.hash = "#/p/" + p.id;
+      if (a === "tab") openTab("#/p/" + p.id);
       if (a === "dup") {
         const n = prompt("Nombre de la copia (se copian los archivos; el historial empieza de cero)", `${p.name} (copia)`); if (n === null) return;
         const r = await api(`/projects/${p.id}/duplicate`, {method: "POST", body: {name: n}});
@@ -487,8 +494,9 @@ async function home() {
 async function project(id) {
   const info = (await api("/projects")).find?.(p => p.id === id);
   if (!info) { location.hash = ""; return; }
+  document.title = info.name;
   $("app").innerHTML = `<div class="proj" id="proj">
-    <div class="top"><a href="#" class="tl" title="Volver a tus proyectos">${logoSvg(30)}</a><a href="#"><button class="gh">${ico("back")} Proyectos</button></a><b title="${esc(info.name)}">${esc(info.name)}</b><small>${esc(name)}</small><span class="vt" role="group" aria-label="Paneles visibles"><button id="vtr" title="Mostrar u ocultar el árbol de archivos">Archivos</button><button id="ved" title="Mostrar u ocultar el código">Código</button><button id="vpdf" title="Mostrar u ocultar el PDF">PDF</button></span><span class="sp"></span><button id="ghb" class="gh">${ico("sync")} <span>GitHub</span><i class="ghdot" hidden></i></button><button id="hb" class="gh">${ico("history")} Historial</button><button id="ab" class="gh">${ico("sparkles")} Asistente</button><button class="dk gh" id="dkp"></button><span class="mnw"><button id="mn" class="gh" title="Más opciones" aria-haspopup="true">${ico("more", 18)}</button><div class="mnp" id="mnp" hidden><button id="sp" title="Corrector ortográfico">Ortografía</button><button id="save">Guardar versión con nombre</button><button id="zp" title="Descargar todo el proyecto como .zip (para Overleaf, una revista o un coautor)">Descargar el proyecto (.zip)</button><button id="ghp" title="Repositorio, coautores y cuenta de GitHub">GitHub…</button><button id="snp" title="Abreviaturas que se expanden con Tab">Snippets…</button><button id="kb">Atajos de teclado</button></div></span></div>
+    <div class="top"><a href="#" class="tl" title="Volver a tus proyectos">${logoSvg(30)}</a><a href="#"><button class="gh">${ico("back")} Proyectos</button></a><b title="${esc(info.name)}">${esc(info.name)}</b><button class="gh ntab" id="ntab" title="Abrir este proyecto en otra pestaña (por ejemplo, para ver dos archivos a la vez). Lo que escribas en una aparece en la otra." aria-label="Abrir en otra pestaña">${ico("copy", 14)}</button><small>${esc(name)}</small><span class="vt" role="group" aria-label="Paneles visibles"><button id="vtr" title="Mostrar u ocultar el árbol de archivos">Archivos</button><button id="ved" title="Mostrar u ocultar el código">Código</button><button id="vpdf" title="Mostrar u ocultar el PDF">PDF</button></span><span class="sp"></span><button id="ghb" class="gh">${ico("sync")} <span>GitHub</span><i class="ghdot" hidden></i></button><button id="hb" class="gh">${ico("history")} Historial</button><button id="ab" class="gh">${ico("sparkles")} Asistente</button><button class="dk gh" id="dkp"></button><span class="mnw"><button id="mn" class="gh" title="Más opciones" aria-haspopup="true">${ico("more", 18)}</button><div class="mnp" id="mnp" hidden><button id="sp" title="Corrector ortográfico">Ortografía</button><button id="save">Guardar versión con nombre</button><button id="zp" title="Descargar todo el proyecto como .zip (para Overleaf, una revista o un coautor)">Descargar el proyecto (.zip)</button><button id="ghp" title="Repositorio, coautores y cuenta de GitHub">GitHub…</button><button id="snp" title="Abreviaturas que se expanden con Tab">Snippets…</button><button id="kb">Atajos de teclado</button></div></span></div>
     <nav id="tr"><div class="tabs"><button data-v="f" class="on">Archivos</button><button data-v="o">Esquema</button><button data-v="c" id="cmtab">Comentarios</button></div><div class="bar"><button id="nf">${ico("plus")} Nuevo</button><button id="up">${ico("upload")} Subir</button><input type="file" id="fi" hidden></div><div class="bar"><button id="nd" style="flex:1" title="Crear una carpeta nueva">${ico("folder")} Carpeta</button><button id="ud" style="flex:1" title="Subir una carpeta entera con sus subcarpetas">${ico("upload")} Subir carpeta</button><input type="file" id="fd" hidden webkitdirectory multiple></div><div class="bar"><button id="xr" style="flex:1" title="Referencias sin definir, citas que faltan y archivos que no existen">${ico("link")} Referencias</button><button id="fm" style="flex:1" title="Convertir una imagen de una fórmula en LaTeX (⌘⌥V)">${ico("sigma")} Fórmula</button></div><div class="bar"><button id="rf" style="flex:1" title="Agregar una referencia a tu .bib a partir de un DOI o de un identificador de arXiv">${ico("plus")} Referencia</button><button id="zt" title="Sincronizar con Zotero: traer tu bibliografía desde Zotero de escritorio" aria-label="Sincronizar con Zotero">Z</button><button id="sa" title="Buscar y reemplazar en todo el proyecto (⌘⇧F)" aria-label="Buscar en el proyecto">${ico("search")}</button></div><ul id="tl"></ul><div id="olb" hidden><label><input type="checkbox" id="olst"> Mostrar teoremas, lemas, definiciones…</label></div><ul id="ol" hidden></ul><div id="cmp" hidden><div class="cmh"><button id="cmadd" class="pr" title="Comenta el texto seleccionado en el editor">＋ Comentar selección</button><label><input type="checkbox" id="cmres"> Ver resueltos</label></div><div id="cmnew" hidden></div><ul id="cml"></ul></div></nav>
     <div class="gut" id="g1" role="separator" aria-orientation="vertical" aria-label="Ajustar el ancho del árbol de archivos" tabindex="0" title="Arrastra para cambiar el tamaño · doble clic para restablecer"></div>
     <div id="ed"></div>
@@ -2380,6 +2388,7 @@ async function project(id) {
   $("sa").onclick = searchAll;
 
   $("dkp").onclick = toggleTheme; applyTheme();
+  $("ntab").onclick = () => openTab("#/p/" + id);
   {
     const mp = $("mnp"), close = () => { mp.hidden = true; $("mn").classList.remove("on"); };
     $("mn").onclick = e => { e.stopPropagation(); mp.hidden = !mp.hidden; $("mn").classList.toggle("on", !mp.hidden); };
