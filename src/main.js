@@ -83,7 +83,7 @@ function route() {
   const m = location.hash.match(/^#\/p\/(\w+)/);
   m ? project(m[1]) : home();
 }
-addEventListener("hashchange", route); route();
+// (la primera pantalla se dibuja al final del archivo, cuando ya está definido todo lo que usa)
 
 // ---------- Lista de proyectos (los modificados más recientemente, primero) ----------
 const norm = t => String(t).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -2636,3 +2636,5 @@ async function project(id) {
   wcNow(); xref(true);
   drawDiff();
 }
+
+addEventListener("hashchange", route); route();
