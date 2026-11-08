@@ -205,6 +205,11 @@ Cada petición al asistente es una ejecución nueva, así que se le pasa la conv
 
 Menú ⋯ → **Preparar para arXiv…**: compila con pdfLaTeX registrando qué archivos usa el documento y arma un .zip con solo esos archivos más el `.bbl` (arXiv no corre BibTeX). Opciones: quitar comentarios (deja el `%` final y respeta `verbatim`, `\url` y `\%`), juntar los `\input`/`\include` en un solo .tex e incluir el `.bib`. Después compila el paquete en una carpeta nueva, sin BibTeX, para comprobar que arXiv podrá compilarlo, y avisa de lo que suele dar problemas: biblatex, minted, XeLaTeX/LuaLaTeX, nombres de archivo con espacios o acentos, archivos grandes, citas sin resolver y cambios sugeridos pendientes.
 
+## Conectar con GitHub (clave en el Llavero)
+
+- **Iniciar sesión con GitHub**: LJtex muestra un código de 8 letras; «Copiar código y abrir GitHub» lo copia y abre github.com/login/device, donde lo pegas y pulsas *Authorize*. LJtex recibe la clave solo, sin copiar nada más. Requiere que `ljtexGithubClientId` en package.json tenga el *Client ID* de la aplicación OAuth de LJtex en GitHub (con *Enable Device Flow* activado). Sin él, se usa una clave personal como antes.
+- **La clave vive en el Llavero de macOS** (servicio «LJtex GitHub»), no en un archivo de texto. Las claves guardadas por versiones anteriores en `~/.ljtex/github.json` se pasan al Llavero solas la primera vez. Fuera de macOS (Linux, Docker) sigue en ese archivo, con permisos solo para tu usuario.
+
 ## Sincronización automática con GitHub
 
 En un proyecto vinculado con GitHub, al abrirlo se traen solos los cambios de tus coautores (y se suben los tuyos). Mientras escribes solo aparece un aviso «Fulano subió cambios · Traer ahora»; si dejas de teclear 90 segundos, se traen solos. Si una sincronización deja conflictos, la automática se pausa hasta que sincronices a mano. Se apaga por proyecto en el panel de GitHub.

@@ -34,7 +34,7 @@ function bundlePath() {
 }
 
 async function gh(path, opts = {}) {
-  const token = readJson(CONF)?.token;
+  const token = require("../ghtoken.cjs").get(true) || readJson(CONF)?.token;   // la clave vive en el Llavero (o en el archivo, en versiones viejas)
   if (!token) throw fail("Para buscar actualizaciones, primero conecta LJtex con tu cuenta de GitHub (botón «Abrir desde GitHub» en la pantalla de proyectos).", {needToken: true});
   const r = await fetch(API + path, {...opts, headers: {Authorization: `token ${token}`, "User-Agent": "LJtex", "X-GitHub-Api-Version": "2022-11-28", Accept: "application/vnd.github+json", ...(opts.headers || {})}});
   if (r.status === 401) throw fail("GitHub no reconoce tu clave. Vuelve a conectar LJtex con GitHub.", {needToken: true});

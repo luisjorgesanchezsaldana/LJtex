@@ -111,32 +111,74 @@ const ghRemote = () => alert("GitHub solo se puede usar desde la computadora don
 async function ghConnect(then) {
   const st = await ghStatus();
   if (st.reason === "remote") return ghRemote();
-  modal(`<h3>Conectar LJtex con GitHub</h3>
-    ${st.connected ? `<p>Ahora está conectado como <b>${esc(st.login)}</b>. Para cambiar de cuenta o de clave, pega una clave nueva.</p>` : ""}
-    <p>LJtex necesita una <b>clave personal</b> (un «token») de tu cuenta de GitHub. Se hace una sola vez en cada computadora:</p>
+  const where = st.store === "archivo" ? "en un archivo privado de esta computadora" : "en el Llavero de macOS, cifrada como tus contraseñas";
+  const manual = `
     <ol class="ghsteps">
       <li><a href="${esc(st.newTokenUrl || "https://github.com/settings/tokens/new?scopes=repo&description=LJtex")}" target="_blank" rel="noopener">Abre esta página de GitHub</a> (si te lo pide, inicia sesión).</li>
       <li>En <b>Expiration</b> elige <b>No expiration</b>.</li>
       <li>Deja marcada la casilla <b>repo</b> (ya viene marcada), baja hasta el final y pulsa el botón verde <b>Generate token</b>.</li>
       <li>Copia la clave que aparece (empieza con <code>ghp_</code>) y pégala aquí:</li>
     </ol>
-    <input id="ght" type="password" class="ghin" placeholder="ghp_…" autocomplete="off" spellcheck="false" aria-label="Clave de GitHub">
+    <div class="rfrow"><input id="ght" type="password" class="ghin" placeholder="ghp_…" autocomplete="off" spellcheck="false" aria-label="Clave de GitHub"><button id="gho">Conectar</button></div>`;
+  modal(`<h3>Conectar LJtex con GitHub</h3>
+    ${st.connected ? `<p>Ahora está conectado como <b>${esc(st.login)}</b>. Puedes volver a iniciar sesión con otra cuenta.</p>` : ""}
+    ${st.device ? `<p>Se hace una sola vez en cada computadora: LJtex te da un código, lo escribes en GitHub y apruebas el acceso.</p>
+      <div id="ghdev" class="ghdev"><button id="ghs" class="pr">${ico("link", 15)} Iniciar sesión con GitHub</button></div>
+      <details class="ghadv"><summary>Usar una clave personal en su lugar</summary>${manual}</details>`
+      : `<p>LJtex necesita una <b>clave personal</b> (un «token») de tu cuenta de GitHub. Se hace una sola vez en cada computadora:</p>${manual}`}
     <div id="ghm" class="rfm"></div>
-    <p class="rfn">La clave se guarda solo en esta computadora y LJtex la usa únicamente para hablar con GitHub. Trátala como una contraseña: no la compartas con nadie.</p>
-    <div class="acts">${st.connected ? '<button id="ghq">Desconectar</button><span class="sp"></span>' : ""}<button id="ghc">Cancelar</button><button id="gho" class="pr">Conectar</button></div>`, (md, close) => {
+    <p class="rfn">La clave se guarda ${where}, y LJtex la usa únicamente para hablar con GitHub.</p>
+    <div class="acts">${st.connected ? '<button id="ghq">Desconectar</button><span class="sp"></span>' : ""}<button id="ghc">Cancelar</button></div>`, (md, close) => {
     const q = s => md.querySelector(s);
-    q("#ght").focus();
-    q("#ghc").onclick = close;
+    let alive = true, timer = 0;
+    const end = () => { alive = false; clearTimeout(timer); close(); };
+    q("#ghc").onclick = end;
+    const msg = (t, bad) => { if (!q("#ghm")) return; q("#ghm").className = "rfm" + (bad ? " bad" : ""); q("#ghm").textContent = t; };
+    const done = r => { end(); then?.(r); };
     if (q("#ghq")) q("#ghq").onclick = async () => {
       if (!confirm("¿Desconectar LJtex de GitHub en esta computadora?\nNo se borra nada: tus proyectos siguen aquí y tus repositorios siguen en GitHub.")) return;
-      await api("/github/token", {method: "DELETE"}); close();
+      await api("/github/token", {method: "DELETE"}); end();
     };
+    // Con código
+    if (q("#ghs")) {
+      q("#ghs").focus();
+      q("#ghs").onclick = async () => {
+        q("#ghs").disabled = true; msg("Pidiendo un código a GitHub…");
+        const d = await api("/github/device/start", {method: "POST"}).catch(() => ({error: "No se pudo contactar con el servidor."}));
+        if (!alive) return;
+        if (d.error) { q("#ghs").disabled = false; msg(d.error, true); if (d.noClient) md.querySelector(".ghadv").open = true; return; }
+        msg("");
+        q("#ghdev").innerHTML = `<p class="ghd1">1. Copia este código:</p>
+          <div class="ghcode"><code>${esc(d.code)}</code><button id="ghcp" class="gh" title="Copiar el código">${ico("copy", 15)} Copiar</button></div>
+          <p class="ghd1">2. Ábrelo en GitHub, pega el código y pulsa <b>Authorize</b>:</p>
+          <button id="ghgo" class="pr">Copiar código y abrir GitHub</button>
+          <p class="ghwait"><span class="spin"></span> Esperando a que apruebes en GitHub…</p>`;
+        const copy = () => navigator.clipboard?.writeText(d.code).then(() => { q("#ghcp").innerHTML = `${ico("copy", 15)} Copiado`; }).catch(() => {});
+        q("#ghcp").onclick = copy;
+        q("#ghgo").onclick = () => { copy(); window.open(d.url, "_blank", "noopener"); };
+        q("#ghgo").focus();
+        const poll = async wait => {
+          timer = setTimeout(async () => {
+            if (!alive) return;
+            const r = await api("/github/device/poll", {method: "POST", body: {id: d.id}}).catch(() => ({pending: true, interval: wait}));
+            if (!alive) return;
+            if (r.ok) { toast(`Conectado con GitHub como ${r.login}.`); return done(r); }
+            if (r.pending) return poll(r.interval || wait);
+            q("#ghdev").innerHTML = `<button id="ghs2" class="pr">Pedir otro código</button>`; msg(r.error, true);
+            q("#ghs2").onclick = () => { end(); ghConnect(then); };
+          }, wait * 1000);
+        };
+        poll(d.interval || 5);
+      };
+    } else q("#ght")?.focus();
+    // Con clave personal
     const go = async () => {
-      q("#gho").disabled = true; q("#ghm").className = "rfm"; q("#ghm").textContent = "Comprobando la clave con GitHub…";
+      q("#gho").disabled = true; msg("Comprobando la clave con GitHub…");
       const r = await api("/github/token", {method: "POST", body: {token: q("#ght").value}}).catch(() => ({error: "No se pudo contactar con el servidor."}));
+      if (!alive) return;
       q("#gho").disabled = false;
-      if (r.error) { q("#ghm").className = "rfm bad"; q("#ghm").textContent = r.error; return; }
-      close(); then?.(r);
+      if (r.error) return msg(r.error, true);
+      done(r);
     };
     q("#gho").onclick = go; q("#ght").onkeydown = e => { if (e.key === "Enter") go(); };
   });

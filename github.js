@@ -8,6 +8,8 @@ import {chmodSync, mkdirSync, readFileSync, writeFileSync} from "fs";
 import {homedir} from "os";
 import {dirname, join} from "path";
 import {isLocal} from "./agent.js";
+import keychain from "./ghtoken.cjs";
+import {fileURLToPath} from "url";
 
 const API = (process.env.LJTEX_GITHUB_API || "https://api.github.com").replace(/\/+$/, "");
 const WEB = (process.env.LJTEX_GITHUB_WEB || "https://github.com").replace(/\/+$/, "");
@@ -120,11 +122,26 @@ export async function reconcile(local, remote, base, fetchBlob) {
 }
 
 // ---------- Clave y llamadas a GitHub ----------
-function readConf() { try { return JSON.parse(readFileSync(CONF, "utf8")); } catch { return {}; } }
-function writeConf(c) {
+// La clave va en el Llavero de macOS (ghtoken.cjs); el archivo solo guarda la cuenta. Si el archivo aún trae una clave
+// de versiones anteriores, se pasa al Llavero y se borra del archivo.
+// Aplicación de LJtex registrada en GitHub (su «Client ID» es público): permite iniciar sesión con un código, sin copiar claves
+const CLIENT_ID = process.env.LJTEX_GITHUB_CLIENT_ID || (() => { try { return JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "package.json"), "utf8")).ljtexGithubClientId || ""; } catch { return ""; } })();
+function readFile_() { try { return JSON.parse(readFileSync(CONF, "utf8")); } catch { return {}; } }
+function writeFile_(c) {
   mkdirSync(dirname(CONF), {recursive: true});
   writeFileSync(CONF, JSON.stringify(c, null, 1), {mode: 0o600});
   try { chmodSync(CONF, 0o600); } catch {}
+}
+function readConf() {
+  const c = readFile_();
+  if (c.token && keychain.available && keychain.set(c.token)) { const {token, ...rest} = c; writeFile_({...rest, store: "llavero"}); return c; }
+  return c.token ? c : {...c, token: keychain.get() || undefined};
+}
+function writeConf(c) {
+  const {token, ...rest} = c;
+  if (!token) { keychain.remove(); delete rest.store; return writeFile_(rest); }
+  if (keychain.set(token)) return writeFile_({...rest, store: "llavero"});
+  writeFile_({...rest, token, store: "archivo"});   // sin Llavero (Linux, Docker): como antes
 }
 async function gh(token, method, path, body, ms = 60000) {
   const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
@@ -339,7 +356,51 @@ export function registerGithub(app, h) {
   app.get("/api/github/status", (q, r) => {
     if (!isLocal(q)) return r.json({connected: false, reason: "remote"});
     const c = readConf();
-    r.json({connected: !!c.token, login: c.login || "", name: c.name || "", newTokenUrl: `${WEB}/settings/tokens/new?scopes=repo&description=LJtex`});
+    r.json({connected: !!c.token, login: c.login || "", name: c.name || "", device: !!CLIENT_ID, store: c.token ? (c.store || (keychain.available ? "llavero" : "archivo")) : (keychain.available ? "llavero" : "archivo"),
+      newTokenUrl: `${WEB}/settings/tokens/new?scopes=repo&description=LJtex`});
+  });
+
+  // ---------- Iniciar sesión con un código (flujo de dispositivo de GitHub) ----------
+  // LJtex pide un código a GitHub, tú lo escribes en github.com/login/device y apruebas; LJtex recibe la clave sola.
+  const devices = new Map();
+  const ghForm = async (url, body) => {
+    const res = await fetch(url, {method: "POST", headers: {Accept: "application/json", "Content-Type": "application/json", "User-Agent": "LJtex"}, body: JSON.stringify(body), signal: AbortSignal.timeout(15000)});
+    return res.json().catch(() => ({error: "respuesta_invalida"}));
+  };
+  app.post("/api/github/device/start", async (q, r) => {
+    if (!local(q, r)) return;
+    if (!CLIENT_ID) return r.status(501).json({error: "Esta versión de LJtex no tiene configurado el inicio de sesión con código. Usa una clave personal.", noClient: true});
+    try {
+      const j = await ghForm(`${WEB}/login/device/code`, {client_id: CLIENT_ID, scope: "repo"});
+      if (j.error || !j.device_code) return r.status(502).json({error: j.error === "device_flow_disabled" ? "La aplicación de LJtex en GitHub no tiene activado el inicio de sesión con código (Enable Device Flow)." : `GitHub no dio un código (${j.error_description || j.error || "sin respuesta"}).`});
+      const id = randomUUID();
+      devices.set(id, {code: j.device_code, interval: j.interval || 5, until: Date.now() + (j.expires_in || 900) * 1000});
+      for (const [k, d] of devices) if (d.until < Date.now()) devices.delete(k);
+      r.json({id, code: j.user_code, url: j.verification_uri || `${WEB}/login/device`, interval: j.interval || 5, expires: j.expires_in || 900});
+    } catch (e) { r.status(502).json({error: "No se pudo contactar con GitHub. Revisa tu conexión a internet."}); }
+  });
+  app.post("/api/github/device/poll", async (q, r) => {
+    if (!local(q, r)) return;
+    const d = devices.get(String(q.body?.id || ""));
+    if (!d || d.until < Date.now()) return r.json({error: "El código ya caducó. Pide uno nuevo.", expired: true});
+    try {
+      // si ya llegó la clave pero falló algo después (p. ej. internet), se reutiliza en vez de pedirla otra vez
+      const j = d.token ? {access_token: d.token} : await ghForm(`${WEB}/login/oauth/access_token`, {client_id: CLIENT_ID, device_code: d.code, grant_type: "urn:ietf:params:oauth:grant-type:device_code"});
+      if (j.error === "authorization_pending") return r.json({pending: true, interval: d.interval});
+      if (j.error === "slow_down") { d.interval = (j.interval || d.interval) + 1; return r.json({pending: true, interval: d.interval}); }
+      if (j.error === "expired_token") { devices.delete(q.body.id); return r.json({error: "El código caducó antes de aprobarlo. Pide uno nuevo.", expired: true}); }
+      if (j.error === "access_denied") { devices.delete(q.body.id); return r.json({error: "En GitHub se canceló el permiso. Si fue sin querer, vuelve a intentarlo."}); }
+      if (!j.access_token) return r.json({error: `GitHub respondió algo inesperado (${j.error_description || j.error || "sin clave"}).`});
+      d.token = j.access_token;
+      const {j: u} = await gh(j.access_token, "GET", "/user");
+      devices.delete(q.body.id);
+      writeConf({...readConf(), token: j.access_token, login: u.login, name: u.name || ""});
+      r.json({ok: true, login: u.login, name: u.name || "", store: keychain.available && keychain.get() === j.access_token ? "llavero" : "archivo"});
+    } catch (e) {
+      if (e.status === 0 || e.name === "TimeoutError" || e.name === "TypeError") return r.json({pending: true, interval: d.interval, note: "sin conexión momentánea"});
+      devices.delete(q.body.id);
+      r.json({error: e.message || "No se pudo completar el inicio de sesión."});
+    }
   });
   app.post("/api/github/token", async (q, r) => {
     if (!local(q, r)) return;

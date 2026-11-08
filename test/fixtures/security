@@ -1,0 +1,14 @@
+#!/usr/bin/env node
+// «security» de macOS simulado: guarda las claves en un archivo
+import fs from "fs"; const F = process.env.FAKE_KC; const db = (() => { try { return JSON.parse(fs.readFileSync(F, "utf8")); } catch { return {}; } })();
+const save = () => fs.writeFileSync(F, JSON.stringify(db));
+const opt = (a, k) => { const i = a.indexOf(k); return i >= 0 ? a[i + 1] : undefined; };
+const run = a => {
+  const key = opt(a, "-s") + "|" + opt(a, "-a");
+  if (a[0] === "find-generic-password") { if (!(key in db)) process.exit(44); process.stdout.write(db[key] + "\n"); return; }
+  if (a[0] === "add-generic-password") { if (key in db && !a.includes("-U")) process.exit(45); db[key] = opt(a, "-w"); save(); return; }
+  if (a[0] === "delete-generic-password") { if (!(key in db)) process.exit(44); delete db[key]; save(); return; }
+  process.exit(1);
+};
+const args = process.argv.slice(2);
+if (args[0] === "-i") { const line = fs.readFileSync(0, "utf8").trim(); run(line.match(/"[^"]*"|\S+/g).map(x => x.replace(/^"|"$/g, ""))); } else run(args);

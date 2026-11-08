@@ -72,6 +72,7 @@
    "github.js",
    "zipio.js",
    "arxiv.js",
+   "ghtoken.cjs",
    "src/changes-core.js",
    "datasync.js",
    "dist/**",
