@@ -107,7 +107,15 @@ ipcMain.handle("update-open-dmg", (e, f) => { updater.openDmg(f); });
 const askUpdate = () => { const w = cur(); if (w) w.webContents.executeJavaScript("window.ljtexCheckUpdates && window.ljtexCheckUpdates(true)", true).catch(() => {}); };
 // Pestañas: la página pide abrir otra (proyecto o pantalla principal) con ipc o con ⌘-clic en un enlace
 const BASE = `http://localhost:${PORT}/`;
-ipcMain.on("tab-open", (e, hash) => openWindow(BASE + (typeof hash === "string" && /^#\/?[\w\/-]*$/.test(hash) ? hash : ""), BrowserWindow.fromWebContents(e.sender)));
+ipcMain.on("tab-open", (e, hash, opts) => {
+  const h = typeof hash === "string" && /^#\/?[\w\/-]*$/.test(hash) ? hash : "";
+  // reuse: si ese proyecto ya está abierto en otra pestaña, se muestra esa en lugar de abrir otra copia
+  if (opts?.reuse && h) {
+    const w = live().find(w => { try { return new URL(w.webContents.getURL()).hash === h; } catch { return false; } });
+    if (w) { if (w.isMinimized()) w.restore(); w.show(); w.focus(); return; }
+  }
+  openWindow(BASE + h, BrowserWindow.fromWebContents(e.sender));
+});
 const newTab = () => openWindow(BASE, cur());
 
 // Abre una ventana de LJtex; con «junto» se agrega como pestaña nueva de esa ventana

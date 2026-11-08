@@ -207,7 +207,7 @@ async function ghOpen() {
     paint();
     q("#ghl").onclick = async e => {
       const a = e.target.closest("[data-acc]"), c = e.target.closest("[data-cl]"), g = e.target.closest("[data-go]");
-      if (g) { close(); location.hash = "#/p/" + g.dataset.go; return; }
+      if (g) { close(); openProject(g.dataset.go); return; }
       if (a) {
         a.disabled = true;
         const r = await api(`/github/invitations/${encodeURIComponent(a.dataset.acc)}/accept`, {method: "POST"}).catch(() => ({error: "No se pudo contactar con el servidor."}));
@@ -219,7 +219,7 @@ async function ghOpen() {
         q("#ghm").className = "rfm"; q("#ghm").textContent = `Descargando ${c.dataset.cl}…`;
         const r = await api("/github/clone", {method: "POST", body: {repo: c.dataset.cl}}).catch(() => ({error: "No se pudo contactar con el servidor."}));
         if (r.error) { md.querySelectorAll("#ghl button").forEach(b => b.disabled = false); q("#ghm").className = "rfm bad"; q("#ghm").textContent = r.error; return; }
-        close(); location.hash = "#/p/" + r.id;
+        close(); openProject(r.id);
       }
     };
   });
@@ -227,8 +227,9 @@ async function ghOpen() {
 
 // Al abrir un proyecto recién creado se pregunta si se quiere respaldar en GitHub
 const OFFER = "ljtexOfrecerGitHub";
-const offerGh = id => { try { if (id) sessionStorage.setItem(OFFER, id); } catch {} };
-const takeOffer = id => { try { if (sessionStorage.getItem(OFFER) !== id) return false; sessionStorage.removeItem(OFFER); return true; } catch { return false; } };
+// (en localStorage y no en sessionStorage: el proyecto nuevo se abre en otra pestaña, que no comparte sessionStorage)
+const offerGh = id => { try { if (id) localStorage.setItem(OFFER, id); } catch {} };
+const takeOffer = id => { try { if (localStorage.getItem(OFFER) !== id) return false; localStorage.removeItem(OFFER); return true; } catch { return false; } };
 
 // ---------- Avisos en la pantalla principal: proyectos que te compartieron por GitHub ----------
 const HIDDEN = "ghAvisosOcultos";
@@ -262,7 +263,7 @@ function ghNoticeClicks() {
     msg.textContent = `Descargando ${b.dataset.op}…`;
     const r = await api("/github/clone", {method: "POST", body: {repo: b.dataset.op}}).catch(() => ({error: "No se pudo contactar con el servidor."}));
     if (r.error) return bad(r.error);
-    location.hash = "#/p/" + r.id;
+    row.remove(); openProject(r.id);
   };
 }
 
@@ -277,6 +278,13 @@ function toast(msg, ms = 6000) {
 // En la app de escritorio cada pestaña es una pestaña nativa de macOS; en el navegador, una pestaña del navegador.
 const openTab = (hash = "") => window.ljtexTabs ? window.ljtexTabs.open(hash) : window.open(location.pathname + hash, "_blank", "noopener");
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
+// Abrir un proyecto desde la pantalla principal: en la app de escritorio, en su propia pestaña (o la que ya lo tenga
+// abierto), y la pantalla principal se queda donde está. En el navegador, en esta misma pestaña.
+function openProject(pid) {
+  if (!pid) return;
+  if (window.ljtexTabs) window.ljtexTabs.open("#/p/" + pid, {reuse: true});
+  else location.hash = "#/p/" + pid;
+}
 
 // ---------- Actualizaciones de la app de escritorio ----------
 // Los .dmg los publica GitHub (acción «Construir LJtex») en cada cambio; aquí se buscan, se descargan y se instalan.
@@ -370,13 +378,13 @@ async function importZip(file) {
   if (j.error) return alert(j.error);
   offerGh(j.id);
   const extra = (j.skipped?.length || j.renamed?.length || j.notes?.length);
-  if (!extra) { location.hash = "#/p/" + j.id; return; }
+  if (!extra) { openProject(j.id); if (window.ljtexTabs) route(); return; }
   modal(`<h3>Proyecto importado: «${esc(j.name)}»</h3><p>${j.files} ${j.files === 1 ? "archivo" : "archivos"} (${j.text} de texto editable).</p>
     ${j.notes?.length ? `<h4>Avisos</h4><ul>${j.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
     ${j.renamed?.length ? `<h4>Nombres cambiados</h4><ul>${j.renamed.map(x => `<li>${esc(x[0])} → ${esc(x[1])}</li>`).join("")}</ul><small>Si tu .tex usa el nombre anterior en \\includegraphics o \\input, actualízalo.</small>` : ""}
     ${j.skippedCount ? `<h4>No se importaron (${j.skippedCount})</h4><ul>${j.skipped.map(x => `<li>${esc(x[0])}: ${esc(x[1])}</li>`).join("")}</ul>` : ""}
     <div class="acts"><button id="io" class="pr">Abrir proyecto</button></div>`, (md, close) => {
-    md.querySelector("#io").onclick = () => { close(); location.hash = "#/p/" + j.id; };
+    md.querySelector("#io").onclick = () => { close(); openProject(j.id); if (window.ljtexTabs) route(); };
     md.querySelector("#io").focus();
   });
 }
@@ -402,13 +410,13 @@ async function home() {
     ${ver?.time ? `<footer class="hfoot">LJtex · versión del ${esc(fechaVer(ver.time))}</footer>` : ""}</div>`;
   $("np").onclick = async () => {
     const ts = await api("/templates");
-    if (!Array.isArray(ts) || !ts.length) { const n = prompt("Nombre del proyecto"); if (n === null) return; const np = await api("/projects", {method: "POST", body: {name: n}}); offerGh(np.id); location.hash = "#/p/" + np.id; return; }
+    if (!Array.isArray(ts) || !ts.length) { const n = prompt("Nombre del proyecto"); if (n === null) return; const np = await api("/projects", {method: "POST", body: {name: n}}); offerGh(np.id); openProject(np.id); if (window.ljtexTabs) route(); return; }
     modal(`<h3>Nuevo proyecto</h3><label>Nombre<br><input id="pn" class="pnin" placeholder="Sin título" maxlength="80"></label>
       <h4>Plantilla</h4><div class="tpls">${ts.map((t, i) => `<label class="tp"><input type="radio" name="tp" value="${esc(t.id)}"${i ? "" : " checked"}><span><b>${esc(t.name)}</b><small>${t.files.length} ${t.files.length === 1 ? "archivo" : "archivos"}</small></span></label>`).join("")}</div>
       <div class="acts"><button id="pc">Cancelar</button><button id="pk" class="pr">Crear</button></div>`, (md, close) => {
       const go = async () => {
         const tp = md.querySelector("input[name=tp]:checked")?.value, n = md.querySelector("#pn").value.trim() || "Sin título";
-        close(); const np = await api("/projects", {method: "POST", body: {name: n, template: tp}}); offerGh(np.id); location.hash = "#/p/" + np.id;
+        close(); const np = await api("/projects", {method: "POST", body: {name: n, template: tp}}); offerGh(np.id); openProject(np.id); if (window.ljtexTabs) route();
       };
       md.querySelector("#pc").onclick = close; md.querySelector("#pk").onclick = go;
       md.querySelector("#pn").onkeydown = e => { if (e.key === "Enter") go(); };
@@ -437,6 +445,9 @@ async function home() {
   let tag = lsGet("filtroEtiqueta", ""), grouped = !!lsGet("agruparEtiquetas", false), q = "";
   $("hg").checked = grouped;
   const alive = () => !!$("pl");
+  // Al volver a esta pestaña, la lista se actualiza (un proyecto pudo crearse, renombrarse o cambiar en otra pestaña)
+  { const f = async () => { const n = await api("/projects").catch(() => null); if (Array.isArray(n) && alive()) { ps = n; draw(); api("/thumbs").then(t => { if (t && !Array.isArray(t) && alive()) { thumbs = t; draw(); } }); } };
+    addEventListener("focus", f); const prev = cleanup; cleanup = () => { prev(); removeEventListener("focus", f); }; }
   const allTags = () => { const m = new Map(); for (const p of ps) for (const t of p.tags || []) m.set(norm(t), {t, n: (m.get(norm(t))?.n || 0) + 1}); return [...m.values()].sort((a, b) => a.t.localeCompare(b.t, "es")); };
   const hueOf = id => { let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
   const card = p => `<a class="card" href="#/p/${p.id}" data-id="${p.id}" title="${esc(p.name)}" style="--h:${hueOf(p.id)}">${thumbs[p.id] ? `<div class="cth"><img src="${thumbs[p.id]}" alt=""></div>` : ""}<b>${esc(p.name)}</b><small>Modificado el ${when(p.modified || p.t)}</small>
@@ -482,7 +493,7 @@ async function home() {
     pop.style.left = Math.max(8, Math.min(r.right - pop.offsetWidth, innerWidth - pop.offsetWidth - 8)) + "px";
     pop.onclick = async e => {
       const a = e.target.dataset.a; if (!a) return; closePop();
-      if (a === "open") location.hash = "#/p/" + p.id;
+      if (a === "open") openProject(p.id);
       if (a === "tab") openTab("#/p/" + p.id);
       if (a === "dup") {
         const n = prompt("Nombre de la copia (se copian los archivos; el historial empieza de cero)", `${p.name} (copia)`); if (n === null) return;
@@ -531,6 +542,8 @@ async function home() {
   }
   $("pl").onclick = e => {
     const m = e.target.closest("[data-m]");
+    const cd = !m && !e.target.closest("[data-tag]") && e.target.closest("a.card");
+    if (cd && window.ljtexTabs && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) { e.preventDefault(); openProject(cd.dataset.id); return; }
     if (m) { e.preventDefault(); e.stopPropagation(); menu(m, ps.find(p => p.id === m.dataset.m)); return; }
     const t = e.target.closest("[data-tag]");
     if (t) { e.preventDefault(); tag = t.dataset.tag; lsSet("filtroEtiqueta", tag); draw(); scrollTo(0, 0); }
