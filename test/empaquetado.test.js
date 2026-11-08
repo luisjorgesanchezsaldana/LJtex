@@ -28,3 +28,7 @@ for (const entry of ["server.js", "electron/main.cjs", "electron/preload.cjs"]) 
     assert.deepEqual(missing, [], `Faltan en "files" de package.json: ${missing.join(", ")}`);
   });
 }
+
+test("lo que lleva el atributo hidden se oculta aunque tenga display propio (si falta, paneles como «Cambios» no se cierran)", () => {
+  assert.match(readFileSync(join(root, "index.html"), "utf8"), /\[hidden\]\{display:none!important\}/);
+});
