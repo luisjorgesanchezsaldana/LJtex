@@ -52,6 +52,7 @@
  },
  "main": "electron/main.cjs",
  "ljtexRepo": "luisjorgesanchezsaldana/LJtex",
+ "ljtexGithubClientId": "Ov23lieMlO8hozXpbw5q",
  "version": "1.0.0",
  "description": "LJtex: editor de LaTeX local",
  "author": "Luis Jorge Sánchez",
