@@ -13,6 +13,7 @@ import {registerAgent} from "./agent.js";
 import {registerBib} from "./bibimport.js";
 import {registerZotero} from "./zotero.js";
 import {registerZip} from "./zipio.js";
+import {registerArxiv} from "./arxiv.js";
 import {registerGithub} from "./github.js";
 import {acquireLock, checkIntegrity, conflictCopies, startBackups, syncStart, syncEnd} from "./datasync.js";
 
@@ -955,6 +956,10 @@ async function texCheck(project, openPath, overrides) {
 // Asistente de Claude (solo desde esta computadora; ver agent.js)
 const agent = registerAgent(app, {db, hp, who, okPath, clashes, getFile, getDocText, lastVersion, addVersion, flushPending, setDocText, takeSnapshot, touch, log, deleteFile, track, lineDiff, verify: texCheck});
 registerZip(app, {db, getDocText, who, log, clashes, okPath});
+registerArxiv(app, {db, getDocText, mainOf,
+  engineOf: id => db.prepare("select engine from projects where id=?").get(id)?.engine,
+  takeLock: async () => { for (let t = 0; busy && t < 480; t++) await new Promise(res => setTimeout(res, 250)); if (busy) return false; busy = true; return true; },
+  freeLock: () => { busy = false; }});
 registerBib(app, {db, who, okPath, clashes, getFile, getDocText, lastVersion, addVersion, flushPending, setDocText, takeSnapshot, touch, log, track});
 registerZotero(app, {db, who, okPath, clashes, getFile, getDocText, lastVersion, addVersion, flushPending, setDocText, takeSnapshot, touch, log, track});
 registerGithub(app, {db, who, okPath, clashes, getDocText, setDocText, flushPending, addVersion, deleteFile, takeSnapshot, touch, log});

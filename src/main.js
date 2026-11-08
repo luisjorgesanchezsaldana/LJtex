@@ -502,7 +502,7 @@ async function project(id) {
   if (!info) { location.hash = ""; return; }
   document.title = info.name;
   $("app").innerHTML = `<div class="proj" id="proj">
-    <div class="top"><a href="#" class="tl" title="Volver a tus proyectos">${logoSvg(30)}</a><a href="#"><button class="gh">${ico("back")} Proyectos</button></a><b title="${esc(info.name)}">${esc(info.name)}</b><button class="gh ntab" id="ntab" title="Abrir este proyecto en otra pestaña (por ejemplo, para ver dos archivos a la vez). Lo que escribas en una aparece en la otra." aria-label="Abrir en otra pestaña">${ico("copy", 14)}</button><small>${esc(name)}</small><span class="vt" role="group" aria-label="Paneles visibles"><button id="vtr" title="Mostrar u ocultar el árbol de archivos">Archivos</button><button id="ved" title="Mostrar u ocultar el código">Código</button><button id="vpdf" title="Mostrar u ocultar el PDF">PDF</button></span><span class="sp"></span><button id="ghb" class="gh">${ico("sync")} <span>GitHub</span><i class="ghdot" hidden></i></button><button id="hb" class="gh">${ico("history")} Historial</button><button id="ab" class="gh">${ico("sparkles")} Asistente</button><button class="dk gh" id="dkp"></button><span class="mnw"><button id="mn" class="gh" title="Más opciones" aria-haspopup="true">${ico("more", 18)}</button><div class="mnp" id="mnp" hidden><button id="sp" title="Corrector ortográfico">Ortografía</button><button id="save">Guardar versión con nombre</button><button id="zp" title="Descargar todo el proyecto como .zip (para Overleaf, una revista o un coautor)">Descargar el proyecto (.zip)</button><button id="ghp" title="Repositorio, coautores y cuenta de GitHub">GitHub…</button><button id="snp" title="Abreviaturas que se expanden con Tab">Snippets…</button><button id="kb">Atajos de teclado</button></div></span></div>
+    <div class="top"><a href="#" class="tl" title="Volver a tus proyectos">${logoSvg(30)}</a><a href="#"><button class="gh">${ico("back")} Proyectos</button></a><b title="${esc(info.name)}">${esc(info.name)}</b><button class="gh ntab" id="ntab" title="Abrir este proyecto en otra pestaña (por ejemplo, para ver dos archivos a la vez). Lo que escribas en una aparece en la otra." aria-label="Abrir en otra pestaña">${ico("copy", 14)}</button><small>${esc(name)}</small><span class="vt" role="group" aria-label="Paneles visibles"><button id="vtr" title="Mostrar u ocultar el árbol de archivos">Archivos</button><button id="ved" title="Mostrar u ocultar el código">Código</button><button id="vpdf" title="Mostrar u ocultar el PDF">PDF</button></span><span class="sp"></span><button id="ghb" class="gh">${ico("sync")} <span>GitHub</span><i class="ghdot" hidden></i></button><button id="hb" class="gh">${ico("history")} Historial</button><button id="ab" class="gh">${ico("sparkles")} Asistente</button><button class="dk gh" id="dkp"></button><span class="mnw"><button id="mn" class="gh" title="Más opciones" aria-haspopup="true">${ico("more", 18)}</button><div class="mnp" id="mnp" hidden><button id="sp" title="Corrector ortográfico">Ortografía</button><button id="save">Guardar versión con nombre</button><button id="zp" title="Descargar todo el proyecto como .zip (para Overleaf, una revista o un coautor)">Descargar el proyecto (.zip)</button><button id="axp" title="Un .zip listo para subir a arXiv: solo lo que usa el documento, con el .bbl y sin comentarios">Preparar para arXiv…</button><button id="ghp" title="Repositorio, coautores y cuenta de GitHub">GitHub…</button><button id="snp" title="Abreviaturas que se expanden con Tab">Snippets…</button><button id="kb">Atajos de teclado</button></div></span></div>
     <nav id="tr"><div class="tabs"><button data-v="f" class="on">Archivos</button><button data-v="o">Esquema</button><button data-v="c" id="cmtab">Comentarios</button></div><div class="bar"><button id="nf">${ico("plus")} Nuevo</button><button id="up">${ico("upload")} Subir</button><input type="file" id="fi" hidden></div><div class="bar"><button id="nd" style="flex:1" title="Crear una carpeta nueva">${ico("folder")} Carpeta</button><button id="ud" style="flex:1" title="Subir una carpeta entera con sus subcarpetas">${ico("upload")} Subir carpeta</button><input type="file" id="fd" hidden webkitdirectory multiple></div><div class="bar"><button id="xr" style="flex:1" title="Referencias sin definir, citas que faltan y archivos que no existen">${ico("link")} Referencias</button><button id="fm" style="flex:1" title="Convertir una imagen de una fórmula en LaTeX (⌘⌥V)">${ico("sigma")} Fórmula</button></div><div class="bar"><button id="rf" style="flex:1" title="Agregar una referencia a tu .bib a partir de un DOI o de un identificador de arXiv">${ico("plus")} Referencia</button><button id="zt" title="Sincronizar con Zotero: traer tu bibliografía desde Zotero de escritorio" aria-label="Sincronizar con Zotero">Z</button><button id="sa" title="Buscar y reemplazar en todo el proyecto (⌘⇧F)" aria-label="Buscar en el proyecto">${ico("search")}</button></div><ul id="tl"></ul><div id="olb" hidden><label><input type="checkbox" id="olst"> Mostrar teoremas, lemas, definiciones…</label></div><ul id="ol" hidden></ul><div id="cmp" hidden><div class="cmh"><button id="cmadd" class="pr" title="Comenta el texto seleccionado en el editor">＋ Comentar selección</button><label><input type="checkbox" id="cmres"> Ver resueltos</label></div><div id="cmnew" hidden></div><ul id="cml"></ul></div></nav>
     <div class="gut" id="g1" role="separator" aria-orientation="vertical" aria-label="Ajustar el ancho del árbol de archivos" tabindex="0" title="Arrastra para cambiar el tamaño · doble clic para restablecer"></div>
     <div id="ed"></div>
@@ -1626,6 +1626,51 @@ async function project(id) {
     md.querySelector("#spc").onclick = close; md.querySelector("#spc").focus();
   });
   $("zp").onclick = () => exportZip(id, info.name);
+  $("axp").onclick = () => { $("mnp").hidden = true; arxivPanel(); };
+  // Preparar el envío a arXiv
+  function arxivPanel() {
+    const o = lsGet("arxivOpc", {strip: true, flat: false, bib: false});
+    modal(`<h3>Preparar para arXiv</h3>
+      <p>LJtex compila el documento, junta solo los archivos que de verdad usa, agrega la bibliografía ya procesada (<code>.bbl</code>, porque arXiv no corre BibTeX) y comprueba que el paquete compile solo, como lo hará arXiv.</p>
+      <label class="axo"><input type="checkbox" id="axs"${o.strip ? " checked" : ""}> <span><b>Quitar los comentarios</b> <small>Las notas con % no se publican en arXiv (cualquiera puede descargar el código fuente).</small></span></label>
+      <label class="axo"><input type="checkbox" id="axf"${o.flat ? " checked" : ""}> <span><b>Juntar todo en un solo .tex</b> <small>Los <code>\\input</code> e <code>\\include</code> quedan dentro del archivo principal.</small></span></label>
+      <label class="axo"><input type="checkbox" id="axb"${o.bib ? " checked" : ""}> <span><b>Incluir también el .bib</b> <small>No hace falta (ya va el .bbl); algunas revistas lo piden.</small></span></label>
+      <div id="axr"></div>
+      <div class="acts"><button id="axc">Cerrar</button><span class="sp"></span><button id="axd" hidden>${ico("download", 15)} Descargar .zip</button><button id="axg" class="pr">Preparar</button></div>`, (md, close) => {
+      const q = sel => md.querySelector(sel);
+      q("#axc").onclick = close;
+      let dl = null;
+      q("#axd").onclick = async () => {
+        try { const r = await fetch(`/api/arxiv/${dl}`, {headers: H}); if (!r.ok) throw new Error(); saveBlob(await r.blob(), slug(info.name) + "-arxiv.zip"); }
+        catch { alert("El paquete ya no está disponible; pulsa «Preparar» otra vez."); }
+      };
+      q("#axg").onclick = async () => {
+        const opt = {strip: q("#axs").checked, flat: q("#axf").checked, bib: q("#axb").checked}; lsSet("arxivOpc", opt);
+        q("#axg").disabled = true; q("#axd").hidden = true;
+        q("#axr").innerHTML = `<p class="rfm"><span class="spin"></span> Compilando y comprobando… (puede tardar un minuto)</p>`;
+        const r = await api(`/projects/${id}/arxiv`, {method: "POST", body: opt}).catch(() => ({error: "No se pudo contactar con el servidor."}));
+        if (!q("#axr")) return;
+        q("#axg").disabled = false; q("#axg").textContent = "Preparar de nuevo";
+        if (r.error) { q("#axr").innerHTML = `<p class="rfm bad">${esc(r.error)}</p>`; return; }
+        const kb = n => n > 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1e3)) + " KB";
+        const warn = (r.warn || []).length ? `<h4>Revisa antes de subir</h4><ul class="axw">${r.warn.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : "";
+        if (r.stage === "compile") {
+          q("#axr").innerHTML = `<p class="rfm bad">${esc(r.error)}</p>${warn}<details><summary>Ver el registro</summary><pre class="ghpre">${esc(r.log || "")}</pre></details>`;
+          return;
+        }
+        dl = r.dl; q("#axd").hidden = false;
+        q("#axr").innerHTML = `<div class="axres ${r.ok ? "good" : "bad"}">${r.ok
+            ? `${ico("zap", 15)} <span><b>Listo para arXiv.</b> El paquete compila solo (${plural(r.pages, "página", "páginas")}), pesa ${kb(r.size)}${r.bbl ? " e incluye la bibliografía (.bbl)" : ""}.</span>`
+            : `${ico("x", 15)} <span><b>El paquete no compiló limpio por sí solo.</b> Revisa los errores antes de subirlo.</span>`}</div>
+          ${r.errors?.length ? `<ul class="axw">${r.errors.map(e => `<li><code>${esc(e)}</code></li>`).join("")}</ul>` : ""}
+          ${warn}
+          <details><summary>Contenido del .zip (${plural(r.files.length, "archivo", "archivos")})</summary><ul class="axf">${r.files.map(f => `<li>${esc(f)}</li>`).join("")}</ul></details>
+          ${r.dropped?.length ? `<details><summary>Se dejan fuera ${plural(r.dropped.length, "archivo que el documento no usa", "archivos que el documento no usa")}</summary><ul class="axf">${r.dropped.map(f => `<li>${esc(f)}</li>`).join("")}</ul></details>` : ""}
+          ${r.log ? `<details><summary>Ver el registro</summary><pre class="ghpre">${esc(r.log)}</pre></details>` : ""}`;
+        q("#axd").focus();
+      };
+    });
+  }
   // El PDF que se descarga es el que muestra el visor (el del archivo compilado); si no es el principal, su nombre lo dice
   const pdfName = () => { const f = (compiledFile && compiledFile !== mainFile ? " - " + compiledFile.replace(/\.tex$/i, "").split("/").pop() : "") + (partial ? " (parcial)" : ""); return slug(info.name + f) + ".pdf"; };
   $("dpdf").onclick = () => { if (pdfBytes) saveBlob(new Blob([pdfBytes], {type: "application/pdf"}), pdfName()); };
