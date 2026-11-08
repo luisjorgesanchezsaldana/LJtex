@@ -57,6 +57,23 @@ const api = (u, o = {}) => fetch("/api" + u, {...o, headers: H, body: o.body && 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const $ = id => document.getElementById(id);
 const when = t => new Date(t).toLocaleString("es", {dateStyle: "medium", timeStyle: "short"});
+// «hace 5 minutos», «hace 3 días», «hace 2 años»…
+function ago(t) {
+  const s = Math.max(0, (Date.now() - t) / 1000), n = (v, u, p) => { v = Math.floor(v); return `hace ${v} ${v === 1 ? u : p}`; };
+  if (s < 60) return "hace un momento";
+  if (s < 3600) return n(s / 60, "minuto", "minutos");
+  if (s < 86400) return n(s / 3600, "hora", "horas");
+  if (s < 86400 * 30) return n(s / 86400, "día", "días");
+  if (s < 86400 * 365) return n(s / (86400 * 30), "mes", "meses");
+  return n(s / (86400 * 365), "año", "años");
+}
+// Quién modificó: «tú» si fuiste tú; si fue otra persona (p. ej. un coautor) se destaca
+function byWho(by) {
+  const names = String(by || "").split(/,\s*/).filter(Boolean); if (!names.length) return "";
+  const me = norm(name), mine = n => norm(n) === me, others = names.filter(n => !mine(n));
+  const txt = others.length ? (names.some(mine) ? ["ti", ...others] : others).join(", ").replace(/, ([^,]*)$/, " y $1") : "ti";
+  return ` · por <span class="by${others.length ? " other" : ""}">${esc(txt)}</span>`;
+}
 const hm = t => new Date(t).toLocaleTimeString("es", {hour: "2-digit", minute: "2-digit"});
 const dayLabel = t => {
   const d = new Date(t), n = new Date(), same = (a, b) => a.toDateString() === b.toDateString();
@@ -447,10 +464,11 @@ async function home() {
   const alive = () => !!$("pl");
   // Al volver a esta pestaña, la lista se actualiza (un proyecto pudo crearse, renombrarse o cambiar en otra pestaña)
   { const f = async () => { const n = await api("/projects").catch(() => null); if (Array.isArray(n) && alive()) { ps = n; draw(); api("/thumbs").then(t => { if (t && !Array.isArray(t) && alive()) { thumbs = t; draw(); } }); } };
-    addEventListener("focus", f); const prev = cleanup; cleanup = () => { prev(); removeEventListener("focus", f); }; }
+    const tick = setInterval(() => alive() && draw(), 60000);   // «hace 5 minutos» se va actualizando solo
+    addEventListener("focus", f); const prev = cleanup; cleanup = () => { prev(); removeEventListener("focus", f); clearInterval(tick); }; }
   const allTags = () => { const m = new Map(); for (const p of ps) for (const t of p.tags || []) m.set(norm(t), {t, n: (m.get(norm(t))?.n || 0) + 1}); return [...m.values()].sort((a, b) => a.t.localeCompare(b.t, "es")); };
   const hueOf = id => { let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
-  const card = p => `<a class="card" href="#/p/${p.id}" data-id="${p.id}" title="${esc(p.name)}" style="--h:${hueOf(p.id)}">${thumbs[p.id] ? `<div class="cth"><img src="${thumbs[p.id]}" alt=""></div>` : ""}<b>${esc(p.name)}</b><small>Modificado el ${when(p.modified || p.t)}</small>
+  const card = p => `<a class="card" href="#/p/${p.id}" data-id="${p.id}" title="${esc(p.name)}" style="--h:${hueOf(p.id)}">${thumbs[p.id] ? `<div class="cth"><img src="${thumbs[p.id]}" alt=""></div>` : ""}<b>${esc(p.name)}</b><small title="${esc(when(p.modified || p.t))}">Modificado ${ago(p.modified || p.t)}${byWho(p.modified_by)}</small>
     <div class="ctg">${(p.tags || []).map(t => tagChip(t, `data-tag="${esc(t)}" title="Mostrar solo «${esc(t)}»"`)).join("")}</div>
     <button class="mb" data-m="${p.id}" title="Más acciones" aria-label="Más acciones">⋯</button></a>`;
   function draw() {

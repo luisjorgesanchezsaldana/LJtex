@@ -225,7 +225,7 @@ export function registerGithub(app, h) {
   }
 
   // Deja los archivos del proyecto como en «target» (los coautores conectados ven el cambio al instante)
-  async function applyLocal(project, local, target, me, label) {
+  async function applyLocal(project, local, target, me, label, by) {
     const upd = [], cre = [], rem = [], held = [];
     for (const [p, t] of target) { const x = local.get(p); if (!x) cre.push(p); else if (x.sha !== t.sha || x.kind !== t.kind) upd.push(p); }
     for (const p of local.keys()) if (!target.has(p)) rem.push(p);
@@ -257,7 +257,7 @@ export function registerGithub(app, h) {
     }
     const after = takeSnapshot(project);
     for (const id of ids) db.prepare("update versions set snap=? where id=?").run(after, id);
-    touch(project);
+    touch(project, by || me);
     const created = cre.filter(p => !held.includes(p)), n = created.length + upd.length + rem.length;
     log(project, me, "github", "", `${label}: ${n} ${n === 1 ? "archivo" : "archivos"}`, before);
     return {created, updated: upd, removed: rem, held};
@@ -279,7 +279,7 @@ export function registerGithub(app, h) {
     const {target, conflicts, merged, notes} = await reconcile(local, rem.files, base, fetchBlob);
     const authors = rem.same ? [] : await whoChanged(tok, l, l.head, rem.head);
     const label = "Traído de GitHub" + (authors.length ? ` (cambios de ${authors.join(", ")})` : "");
-    const ap = await applyLocal(project, local, target, me, label);
+    const ap = await applyLocal(project, local, target, me, label, authors.length ? authors.join(", ") : me);
     for (const p of ap.held) { target.delete(p); notes.push(`«${p}» no se pudo traer porque choca con una carpeta o un archivo del mismo nombre en este proyecto.`); }
     out.pulled.created.push(...ap.created); out.pulled.updated.push(...ap.updated); out.pulled.removed.push(...ap.removed);
     out.conflicts.push(...conflicts); out.merged.push(...merged); out.notes.push(...notes); out.skipped.push(...rem.skipped);

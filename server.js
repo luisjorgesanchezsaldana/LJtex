@@ -67,6 +67,7 @@ if (!hasCol("versions", "snap")) db.exec("alter table versions add column snap i
 if (!hasCol("activity", "snap")) db.exec("alter table activity add column snap integer");
 if (!hasCol("projects", "tags")) db.exec("alter table projects add column tags text");
 if (!hasCol("projects", "main")) db.exec("alter table projects add column main text");   // archivo principal (el que se compila); vacío = main.tex
+if (!hasCol("projects", "modified_by")) db.exec("alter table projects add column modified_by text");   // quién hizo la última modificación
 if (!hasCol("projects", "engine")) db.exec("alter table projects add column engine text");   // motor de compilación (vacío = pdflatex)
 if (!hasCol("files", "hash")) db.exec("alter table files add column hash text");
 if (SYNC_DIR) {
@@ -86,7 +87,7 @@ const BAD_PATH = "Nombre no válido. Usa letras, números, espacios, guiones, pu
 const split = n => [n.split("/")[0], n.split("/").slice(1).join("/")];
 const sha1 = b => createHash("sha1").update(b).digest("hex");
 const fecha = t => new Date(t).toLocaleString("es", {dateStyle: "medium", timeStyle: "short"});
-const touch = id => db.prepare("update projects set modified=? where id=?").run(Date.now(), id);
+const touch = (id, by) => db.prepare("update projects set modified=?, modified_by=? where id=?").run(Date.now(), by ? String(by).slice(0, 120) : null, id);
 const getFile = (p, path) => db.prepare("select text from files where project=? and path=?").get(p, path);
 const who = q => { try { return decodeURIComponent(q.get("x-user") || "").slice(0, 60) || "Anónimo"; } catch { return "Anónimo"; } };
 const log = (project, author, kind, path = "", detail = "", snap = null) =>
@@ -285,7 +286,7 @@ const hp = Server.configure({
         track.set(documentName, s);
       } else s.authors.push(author);   // se editó a la vez: la versión será de ambos
     }
-    s.lastT = now; s.lastText = text;
+    s.lastT = now; s.lastText = text; s.last = author;
   },
   async onStoreDocument({documentName, document}) {
     const clientsCount = document.getConnectionsCount();   // el valor del evento puede estar desfasado: se pregunta al documento
@@ -294,7 +295,7 @@ const hp = Server.configure({
     const text = document.getText("src").toString();
     if (row.text !== text) {   // solo cuenta como modificación si el texto cambió
       db.prepare("update files set text=? where project=? and path=?").run(text, p, path);
-      touch(p);
+      touch(p, track.get(documentName)?.last);
     }
     if (restoring.has(documentName)) return;
     const s = track.get(documentName);
@@ -323,7 +324,7 @@ const cleanTags = v => {
 };
 const parseTags = t => { try { return cleanTags(JSON.parse(t || "[]")); } catch { return []; } };
 app.get("/api/projects", (q, r) =>
-  r.json(db.prepare("select id,name,t,modified,tags,main,engine from projects order by modified desc, t desc").all().map(p => ({...p, tags: parseTags(p.tags), main: p.main || "main.tex", engine: p.engine || "pdflatex"}))));
+  r.json(db.prepare("select id,name,t,modified,modified_by,tags,main,engine from projects order by modified desc, t desc").all().map(p => ({...p, tags: parseTags(p.tags), main: p.main || "main.tex", engine: p.engine || "pdflatex"}))));
 // Cambiar el nombre o las etiquetas (no cuenta como «modificación» del contenido: no cambia el orden por fecha)
 app.patch("/api/projects/:id", (q, r) => {
   const p = db.prepare("select name,tags,main,engine from projects where id=?").get(q.params.id);
@@ -351,7 +352,7 @@ app.post("/api/projects/:id/duplicate", (q, r) => {
   const name = (String(q.body.name || "").trim() || `${src.name} (copia)`).slice(0, 80);
   const files = db.prepare("select path,kind,text,data,hash from files where project=?").all(q.params.id);
   db.transaction(() => {
-    db.prepare("insert into projects(id,name,t,modified,tags,main,engine) values(?,?,?,?,?,?,?)").run(id, name, now, now, JSON.stringify(parseTags(src.tags)), src.main, src.engine);
+    db.prepare("insert into projects(id,name,t,modified,tags,main,engine,modified_by) values(?,?,?,?,?,?,?,?)").run(id, name, now, now, JSON.stringify(parseTags(src.tags)), src.main, src.engine, who(q));
     for (const f of files)
       db.prepare("insert into files(project,path,kind,text,data,hash) values(?,?,?,?,?,?)")
         .run(id, f.path, f.kind, f.kind === "text" ? getDocText(`${q.params.id}/${f.path}`) : null, f.data, f.hash);
@@ -384,7 +385,7 @@ app.post("/api/projects", (q, r) => {
   const id = randomUUID().slice(0, 8), now = Date.now(), name = (q.body.name || "Sin título").slice(0, 80);
   const tpl = TEMPLATES[q.body.template] || TEMPLATES.articulo;
   db.transaction(() => {
-    db.prepare("insert into projects(id,name,t,modified) values(?,?,?,?)").run(id, name, now, now);
+    db.prepare("insert into projects(id,name,t,modified,modified_by) values(?,?,?,?,?)").run(id, name, now, now, who(q));
     for (const [p, text] of Object.entries(tpl.files)) db.prepare("insert into files(project,path,kind,text) values(?,?,?,?)").run(id, p, "text", text);
   })();
   log(id, who(q), "project", "", name);
@@ -450,7 +451,7 @@ app.post("/api/files", (q, r) => {
   const buf = kind === "bin" ? Buffer.from(data, "base64") : null;
   db.prepare("insert or replace into files(project,path,kind,text,data,hash) values(?,?,?,?,?,?)")
     .run(project, path, kind, kind === "text" ? text || "" : null, buf, buf ? sha1(buf) : null);
-  touch(project);
+  touch(project, who(q));
   log(project, who(q), same ? "replace" : how === "upload" ? "upload" : "create", path, "", before);
   r.json({ok: true});
 });
@@ -458,7 +459,7 @@ app.delete("/api/files", (q, r) => {
   const {project, path} = q.query;
   const existed = getFile(project, path), before = existed ? takeSnapshot(project) : null;
   deleteFile(project, path);
-  touch(project);
+  touch(project, who(q));
   if (existed) log(project, who(q), "delete", path, "", before);
   r.sendStatus(204);
 });
@@ -512,7 +513,7 @@ function moveFiles(project, from, to, me, record = true) {
     });
     for (const m of map) if (live.has(m.path))
       db.prepare("insert or replace into docs values(?,?)").run(`${project}/${m.newPath}`, live.get(m.path).state);
-    touch(project);
+    touch(project, who(q));
   })();
   if (record) log(project, me, "move", from, to + (map.length > 1 ? ` (${map.length} archivos)` : ""), before);
   for (const n of names) hp.closeConnections(n.from);   // quien lo tenía abierto verá que el archivo cambió de sitio
@@ -557,7 +558,7 @@ app.post("/api/versions/:id/restore", async (q, r) => {
     await setDocText(v.doc, v.text, me);
     const id = addVersion(v.doc, me, "Restaurada: " + (v.label || fecha(v.t)), false, v.text);
     track.delete(v.doc);
-    touch(project);
+    touch(project, me);
     r.json({ok: true, id});
   } catch (e) {
     r.status(500).json({error: "No se pudo restaurar: " + e.message});
@@ -570,7 +571,7 @@ app.post("/api/versions", (q, r) => {
   if (!getFile(project, path)) return r.status(404).json({error: "El archivo ya no existe."});
   flushPending(doc);   // lo que ya habían escrito otros queda en su propia versión
   const id = addVersion(doc, who(q), String(label || "").slice(0, 120) || "Versión guardada", false, getDocText(doc));
-  touch(project);
+  touch(project, who(q));
   r.status(201).json({id});
 });
 
@@ -623,7 +624,7 @@ app.post("/api/snaps/:id/restore", async (q, r) => {
     }
     const after = takeSnapshot(project);   // las versiones creadas aquí apuntan al proyecto ya restaurado
     for (const id of ids) db.prepare("update versions set snap=? where id=?").run(after, id);
-    touch(project);
+    touch(project, me);
     log(project, me, "restore-project", "", "al estado del " + fecha(s.t), before);
     r.json({ok: true, changed});
   } catch (e) {
@@ -725,7 +726,7 @@ app.post("/api/projects/:id/replace", async (q, r) => {
       addVersion(name, me, `Reemplazar «${String(q.body.q).slice(0, 40)}» → «${rep.slice(0, 40)}»`, false, f.text);
       track.delete(name); count += f.n;
     }
-    touch(project);
+    touch(project, me);
     log(project, me, "replace", "", `«${String(q.body.q).slice(0, 60)}» → «${rep.slice(0, 60)}» (${count} en ${plan.length} archivos)`, before);
     r.json({changed: count, files: plan.length});
   } catch (e) { r.status(500).json({error: "No se pudo reemplazar: " + e.message}); }
