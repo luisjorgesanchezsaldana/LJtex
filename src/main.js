@@ -222,6 +222,12 @@ function ghNoticeClicks() {
   };
 }
 
+// Mensaje breve abajo al centro que desaparece solo
+function toast(msg, ms = 6000) {
+  const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; t.setAttribute("role", "status");
+  document.body.appendChild(t); setTimeout(() => t.remove(), ms);
+}
+
 // ---------- Pestañas ----------
 // En la app de escritorio cada pestaña es una pestaña nativa de macOS; en el navegador, una pestaña del navegador.
 const openTab = (hash = "") => window.ljtexTabs ? window.ljtexTabs.open(hash) : window.open(location.pathname + hash, "_blank", "noopener");
@@ -636,8 +642,30 @@ async function project(id) {
       : "Guardar este proyecto en GitHub para escribirlo con coautores";
     b.querySelector(".ghdot").hidden = !st?.remote;
   };
-  async function ghRefresh() { ghInfo = await api(`/projects/${id}/github`).catch(() => null); ghPaint(); if (ghInfo?.linked) ghCheck(); }
-  async function ghCheck() { const c = await api(`/projects/${id}/github/check`).catch(() => null); if (c?.linked) { ghInfo.last = c.last; ghPaint(c); } }
+  async function ghRefresh() { ghInfo = await api(`/projects/${id}/github`).catch(() => null); ghPaint(); if (ghInfo?.linked) return ghCheck(); }
+  // Sincronización automática: al abrir el proyecto se traen los cambios del coautor; mientras escribes solo se avisa,
+  // y se traen solos cuando llevas un rato sin teclear. Si una sincronización deja conflictos, se pausa hasta que sincronices a mano.
+  const AUTO_KEY = "ghAuto:" + id, autoOn = () => lsGet(AUTO_KEY, true) !== false;
+  let ghLastKey = 0, ghAutoPaused = false, ghFirst = true;
+  { const k = () => { ghLastKey = Date.now(); }; document.addEventListener("keydown", k, true); const prev = cleanup; cleanup = () => { prev(); document.removeEventListener("keydown", k, true); }; }
+  async function ghCheck() {
+    const c = await api(`/projects/${id}/github/check`).catch(() => null);
+    if (!c?.linked || !$("ghb")) return;
+    ghInfo.last = c.last; ghPaint(c);
+    const first = ghFirst; ghFirst = false;
+    if (!c.remote) return ghNews(null);
+    const idle = Date.now() - ghLastKey > 90000;
+    if (autoOn() && !ghAutoPaused && (first || idle)) return ghSync({auto: true, by: c.by});
+    ghNews(c);   // estás escribiendo: solo avisar
+  }
+  // Aviso visible (bajo la barra superior) de que hay cambios nuevos en GitHub
+  function ghNews(c) {
+    let el = $("ghnews");
+    if (!c) { el?.remove(); return; }
+    if (!el) { el = document.createElement("div"); el.id = "ghnews"; el.className = "ghnews"; $("proj").appendChild(el); }
+    el.innerHTML = `${ico("sync", 14)}<span><b>${esc(c.by || "Un coautor")}</b> subió cambios a GitHub${c.at ? ` (${esc(when(c.at))})` : ""}.${ghAutoPaused ? " La sincronización automática está en pausa hasta que resuelvas los conflictos." : autoOn() ? " Se traerán solos cuando dejes de escribir un momento." : ""}</span><button class="pr" id="ghnow">Traer ahora</button>`;
+    el.querySelector("#ghnow").onclick = () => ghSync();
+  }
   ghRefresh().then(() => { if (takeOffer(id) && ghInfo && !ghInfo.linked && ghInfo.reason !== "remote" && $("ghb")) ghOffer(); });
   function ghOffer() {
     modal(`<h3>¿Respaldar este proyecto en GitHub?</h3>
@@ -668,20 +696,27 @@ async function project(id) {
       md.onclick = e => { if (e.target === md) return close(); const a = e.target.closest("[data-op]"); if (a) { e.preventDefault(); close(); open(a.dataset.op); } };
     });
   }
-  async function ghSync() {
+  async function ghSync(opt = {}) {
     const b = $("ghb"); if (!b || b.disabled) return false;
     b.disabled = true; b.querySelector("span").textContent = "Sincronizando…"; $("cs").textContent = "Sincronizando con GitHub…";
     const r = await api(`/projects/${id}/github/sync`, {method: "POST"}).catch(() => ({error: "No se pudo contactar con el servidor."}));
     if (!$("ghb")) return false;
     b.disabled = false;
-    if (r.error) { ghPaint(); $("cs").textContent = ""; if (r.needToken) { ghConnect(() => ghSync()); return false; } alert(r.error); return false; }
+    if (r.error) {
+      ghPaint(); $("cs").textContent = "";
+      if (opt.auto) { $("cs").textContent = "GitHub: no se pudo sincronizar automáticamente (" + r.error.slice(0, 120) + ")."; return false; }   // sin ventanas por un intento automático (p. ej. sin internet)
+      if (r.needToken) { ghConnect(() => ghSync()); return false; } alert(r.error); return false;
+    }
     ghInfo = {...ghInfo, linked: true, full: r.full || ghInfo?.full, url: r.url || ghInfo?.url, last: r.last}; ghPaint();
+    ghNews(null);
+    ghAutoPaused = !!(r.blocked?.length || r.conflicts?.length);   // con conflictos, no volver a sincronizar solo
     await load();
     const n = r.pulled ? r.pulled.created.length + r.pulled.updated.length + r.pulled.removed.length : 0, parts = [];
     if (n) parts.push(`llegaron cambios en ${plural(n, "archivo", "archivos")}${r.authors?.length ? " (de " + r.authors.join(", ") + ")" : ""}`);
     if (r.pushed?.length) parts.push(`${r.pushed.length === 1 ? "se subió 1 archivo" : `se subieron ${r.pushed.length} archivos`}`);
-    $("cs").textContent = r.blocked?.length ? "GitHub: hay conflictos sin resolver; no se sincronizó." : r.conflicts?.length ? "GitHub: llegaron cambios, con conflictos por resolver." : "GitHub: " + (parts.length ? parts.join(" y ") : "todo estaba al día") + ".";
-    if (r.blocked?.length || r.conflicts?.length || r.notes?.length) ghReport(r);
+    $("cs").textContent = (opt.auto ? "GitHub (automático): " : "GitHub: ") + (r.blocked?.length ? "hay conflictos sin resolver; no se sincronizó." : r.conflicts?.length ? "llegaron cambios, con conflictos por resolver." : (parts.length ? parts.join(" y ") : "todo estaba al día") + ".");
+    if (opt.auto && n && !r.conflicts?.length && !r.blocked?.length) toast(`Llegaron los cambios ${r.authors?.length ? "de " + r.authors.join(", ") : "de GitHub"} (${plural(n, "archivo", "archivos")}).`);
+    if ((r.blocked?.length && !opt.auto) || r.conflicts?.length || r.notes?.length) ghReport(r);
     ghCheck();
     return !r.blocked?.length && !r.conflicts?.length;
   }
@@ -749,11 +784,14 @@ async function project(id) {
       <h4>Coautores</h4><div id="ghpp" class="rfm">Consultando…</div>
       <div class="rfrow"><input id="ghu" placeholder="Usuario de GitHub de tu coautor" spellcheck="false" autocomplete="off" aria-label="Usuario de GitHub del coautor"><button id="ghi">Invitar</button></div>
       <p class="rfn">Tu coautor recibe la invitación por correo. Luego, en su LJtex, pulsa <b>Abrir desde GitHub</b> en la pantalla de proyectos: ahí acepta la invitación y abre el proyecto.</p>
+      <h4>Sincronización</h4><label class="ghauto"><input type="checkbox" id="gha"${autoOn() ? " checked" : ""}> Sincronizar automáticamente</label>
+      <p class="rfn">Al abrir el proyecto se traen los cambios de tus coautores y se suben los tuyos; mientras escribes solo te avisa, y los trae cuando dejas de escribir un momento. Al salir te recuerda subir lo pendiente.</p>
       <h4>Cuenta</h4><p class="rfn">Conectado como <b>${esc(ghInfo.login || "")}</b> · <a href="#" id="ghk">cambiar clave o cuenta</a></p>
       <div class="acts"><button id="ghx">Desvincular…</button><span class="sp"></span><button id="ghc">Cerrar</button><button id="ghs" class="pr">Sincronizar ahora</button></div>`, (md, close) => {
       const q = s => md.querySelector(s);
       q("#ghc").onclick = close;
       q("#ghs").onclick = () => { close(); ghSync(); };
+      q("#gha").onchange = e => { lsSet(AUTO_KEY, e.target.checked); $("cs").textContent = e.target.checked ? "GitHub: sincronización automática activada." : "GitHub: sincronización automática desactivada."; };
       q("#ghk").onclick = e => { e.preventDefault(); close(); ghConnect(() => ghRefresh()); };
       q("#ghx").onclick = async () => {
         if (!confirm(`¿Desvincular este proyecto de ${ghInfo.full}?\n\nNo se borra nada: el proyecto sigue aquí y el repositorio sigue en GitHub, pero dejarán de sincronizarse.`)) return;

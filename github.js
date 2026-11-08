@@ -453,9 +453,17 @@ export function registerGithub(app, h) {
     const base = JSON.parse(l.base || "{}"), lf = localFiles(q.params.id);
     const mine = lf.size !== Object.keys(base).length || [...lf].some(([p, f]) => base[p] !== f.sha);
     if (q.query.local) return r.json({linked: true, local: mine, last: l.last});   // sin preguntar a GitHub (rápido, sin internet)
-    let remote = null;
-    try { const ref = await call(token(), "GET", `${R(l)}/git/ref/heads/${BR(l)}`, null, 15000); remote = ref.object.sha !== l.head; } catch {}
-    r.json({linked: true, local: mine, remote, last: l.last});
+    let remote = null, by = null, at = null;
+    try {
+      const tok = token(), ref = await call(tok, "GET", `${R(l)}/git/ref/heads/${BR(l)}`, null, 15000);
+      remote = ref.object.sha !== l.head;
+      if (remote) {   // quién subió lo último (para el aviso «María subió cambios»)
+        const c = await call(tok, "GET", `${R(l)}/commits/${ref.object.sha}`, null, 15000).catch(() => null);
+        by = c?.author?.login || c?.commit?.author?.name || null; at = c?.commit?.author?.date || null;
+        if (by && readConf().login && by.toLowerCase() === readConf().login.toLowerCase()) by = "tú (desde otra computadora)";
+      }
+    } catch {}
+    r.json({linked: true, local: mine, remote, by, at, last: l.last});
   });
   app.delete("/api/projects/:id/github", (q, r) => {
     if (!local(q, r)) return;
