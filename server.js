@@ -14,6 +14,7 @@ import {registerBib} from "./bibimport.js";
 import {registerZotero} from "./zotero.js";
 import {registerZip} from "./zipio.js";
 import {registerArxiv} from "./arxiv.js";
+import {parseChanges, decideAll, changeAuthors, ensurePreamble, authorId} from "./src/changes-core.js";
 import {registerGithub} from "./github.js";
 import {acquireLock, checkIntegrity, conflictCopies, startBackups, syncStart, syncEnd} from "./datasync.js";
 
@@ -956,6 +957,43 @@ async function texCheck(project, openPath, overrides) {
 // Asistente de Claude (solo desde esta computadora; ver agent.js)
 const agent = registerAgent(app, {db, hp, who, okPath, clashes, getFile, getDocText, lastVersion, addVersion, flushPending, setDocText, takeSnapshot, touch, log, deleteFile, track, lineDiff, verify: texCheck});
 registerZip(app, {db, getDocText, who, log, clashes, okPath});
+// ---------- Control de cambios (marcas del paquete «changes» en el propio texto) ----------
+const texFiles = id => db.prepare("select path from files where project=? and kind='text'").all(id).map(f => f.path).filter(p => /\.(tex|ltx)$/i.test(p));
+// Resumen de todo el proyecto: cuántos cambios pendientes hay en cada archivo y de quién
+app.get("/api/projects/:id/changes", (q, r) => {
+  const id = q.params.id;
+  const authors = changeAuthors(getDocText(`${id}/${mainOf(id)}`));
+  const files = texFiles(id).map(path => {
+    const cs = parseChanges(getDocText(`${id}/${path}`)), by = {};
+    for (const c of cs) by[c.id || "?"] = (by[c.id || "?"] || 0) + 1;
+    return {path, n: cs.length, by};
+  }).filter(f => f.n);
+  r.json({files, authors: Object.fromEntries(authors)});
+});
+// Aceptar o rechazar en bloque (todo el proyecto, un archivo y/o un autor)
+app.post("/api/projects/:id/changes/decide", async (q, r) => {
+  const id = q.params.id, {accept, path, author} = q.body || {};
+  let n = 0;
+  for (const p of path ? [path] : texFiles(id)) {
+    const doc = `${id}/${p}`, t = getDocText(doc);
+    const list = parseChanges(t).filter(c => !author || c.id === author);
+    if (!list.length) continue;
+    n += list.length;
+    await setDocText(doc, decideAll(t, list, !!accept), who(q));
+  }
+  r.json({ok: true, n});
+});
+// Preparar el preámbulo del archivo principal (bloque del paquete changes y el autor), o cambiar si el PDF muestra las marcas
+app.post("/api/projects/:id/changes/setup", async (q, r) => {
+  const id = q.params.id, main = mainOf(id), doc = `${id}/${main}`, t = getDocText(doc);
+  const name = String(q.body?.name || who(q) || "Autor").slice(0, 60);
+  const me = {id: authorId(q.body?.id || name), name};
+  const nt = ensurePreamble(t, me, typeof q.body?.show === "boolean" ? q.body.show : undefined);
+  if (nt === t && !/\\begin\{document\}/.test(t)) return r.status(422).json({error: `No encontré \\begin{document} en el archivo principal («${main}»). Elige el archivo principal con el botón «Principal» de la barra del PDF.`});
+  if (nt !== t) await setDocText(doc, nt, who(q));
+  r.json({ok: true, id: me.id, main, changed: nt !== t});
+});
+
 registerArxiv(app, {db, getDocText, mainOf,
   engineOf: id => db.prepare("select engine from projects where id=?").get(id)?.engine,
   takeLock: async () => { for (let t = 0; busy && t < 480; t++) await new Promise(res => setTimeout(res, 250)); if (busy) return false; busy = true; return true; },

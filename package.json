@@ -71,6 +71,8 @@
    "zotero.js",
    "github.js",
    "zipio.js",
+   "arxiv.js",
+   "src/changes-core.js",
    "datasync.js",
    "dist/**",
    "public/**",

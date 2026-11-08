@@ -6,6 +6,7 @@ import {join, dirname, relative, normalize, extname} from "path";
 import {tmpdir} from "os";
 import {zipSync, strToU8} from "fflate";
 import {randomUUID} from "crypto";
+import {parseChanges} from "./src/changes-core.js";
 
 // ---------- Quitar comentarios ----------
 // Deja el «%» final (para no meter espacios donde el autor los evitaba) y borra las líneas que son solo comentario.
@@ -79,6 +80,8 @@ export function registerArxiv(app, h) {
     if (!text.has(main)) return r.status(422).json({error: `El archivo principal «${main}» no existe. Elígelo con el botón «Principal» de la barra del PDF.`});
     const base = main.split("/").at(-1).replace(/\.[^.]*$/, "");
     const warn = [], eng = engineOf(id);
+    const pend = [...text].filter(([f]) => /\.(tex|ltx)$/i.test(f)).reduce((n, [, t]) => n + parseChanges(t).length, 0);
+    if (pend) warn.push(`Hay ${pend} ${pend === 1 ? "cambio sugerido" : "cambios sugeridos"} sin aceptar ni rechazar (botón «Cambios»): en arXiv se verían marcados en colores. Resuélvelos antes de enviar.`);
     if (eng === "xelatex" || eng === "lualatex") warn.push(`Tu proyecto compila con ${eng === "xelatex" ? "XeLaTeX" : "LuaLaTeX"}, pero arXiv compila con pdfLaTeX. La comprobación de abajo usa pdfLaTeX: si falla, revisa los paquetes de fuentes (fontspec, etc.).`);
 
     if (!(await takeLock())) return r.status(429).json({error: "Hay otra compilación en curso. Inténtalo de nuevo en unos segundos."});

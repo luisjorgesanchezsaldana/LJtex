@@ -193,6 +193,22 @@ Cada petición al asistente es una ejecución nueva, así que se le pasa la conv
 - **Comentarios** anclados al texto (pestaña «Comentarios», ⌘⌥M): responder, resolver, eliminar. Se guardan en el propio documento, así que se sincronizan con iCloud y con los coautores.
 - **Motor de compilación** por proyecto: pdfLaTeX, XeLaTeX o LuaLaTeX (selector en la barra del PDF).
 
+## Control de cambios (sugerir cambios)
+
+- **Botón «Sugerir»** (⌘⇧E) en la barra superior: mientras está activo, lo que escribes queda como `\added[id=tú]{…}`, lo que borras como `\deleted[id=tú]{…}` y lo que escribes sobre una selección como `\replaced[id=tú]{nuevo}{viejo}` (paquete `changes` de LaTeX). Las marcas van en el propio texto, así que viajan por GitHub y cualquier coautor las ve, use o no LJtex.
+- En el editor cada autor tiene su color (agregado subrayado, quitado tachado). Con el cursor sobre un cambio aparece una burbuja con **Aceptar** y **Rechazar**.
+- **Botón «Cambios»** (con el número de pendientes): lista los cambios del archivo abierto, los de otros archivos, y permite aceptar o rechazar todo, o todo lo de una persona, en el proyecto entero.
+- Al activarlo por primera vez se agrega al preámbulo del archivo principal un bloque con `\usepackage{changes}` y tu color. Si el paquete `changes` (o `ulem`, `xstring`…) no está instalado, el documento compila igual mostrando el texto como quedaría al aceptar todo. La casilla «Mostrar las marcas en colores en el PDF» cambia entre ver las marcas y ver el resultado.
+- Para no romper el documento no deja sugerir en medio de un comando (selecciona `\cite{…}` completo), ni quitar llaves sueltas, ni marcas que crucen una línea en blanco, ni comentarios con `%`.
+
+## Preparar para arXiv
+
+Menú ⋯ → **Preparar para arXiv…**: compila con pdfLaTeX registrando qué archivos usa el documento y arma un .zip con solo esos archivos más el `.bbl` (arXiv no corre BibTeX). Opciones: quitar comentarios (deja el `%` final y respeta `verbatim`, `\url` y `\%`), juntar los `\input`/`\include` en un solo .tex e incluir el `.bib`. Después compila el paquete en una carpeta nueva, sin BibTeX, para comprobar que arXiv podrá compilarlo, y avisa de lo que suele dar problemas: biblatex, minted, XeLaTeX/LuaLaTeX, nombres de archivo con espacios o acentos, archivos grandes, citas sin resolver y cambios sugeridos pendientes.
+
+## Sincronización automática con GitHub
+
+En un proyecto vinculado con GitHub, al abrirlo se traen solos los cambios de tus coautores (y se suben los tuyos). Mientras escribes solo aparece un aviso «Fulano subió cambios · Traer ahora»; si dejas de teclear 90 segundos, se traen solos. Si una sincronización deja conflictos, la automática se pausa hasta que sincronices a mano. Se apaga por proyecto en el panel de GitHub.
+
 ## Navegación, referencias y revisión
 
 - **⌘+clic** (Ctrl+clic en Windows/Linux) sobre `\ref`, `\eqref`, `\cite`, `\input`, `\include`, `\includegraphics` o `\bibliography` salta a la etiqueta, la entrada del `.bib` o el archivo. Sobre un `\label` salta a su primera referencia.

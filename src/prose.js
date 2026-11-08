@@ -107,6 +107,8 @@ export function mask(text) {
         }
         if (name === "end") { i = skipArgs(t, j, 1, false); continue; }
         if (Object.prototype.hasOwnProperty.call(SKIP, name)) { if (t[j] === "*") j++; i = skipArgs(t, j, SKIP[name]); continue; }
+        if (name === "added" || name === "deleted" || name === "replaced") { if (t[j] === "[") j = skipBracket(t, j); i = j; continue; }   // control de cambios: [id=…] no es prosa
+        if (name === "definechangesauthor") { if (t[j] === "[") j = skipBracket(t, j); i = skipArgs(t, j, 1); continue; }
         i = j; if (t[i] === "*") i++;
         continue;                                                   // otro comando: se omite el nombre y su contenido se revisa
       }

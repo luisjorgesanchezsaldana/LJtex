@@ -13,6 +13,8 @@ import {HocuspocusProvider} from "@hocuspocus/provider";
 import {yCollab} from "y-codemirror.next";
 import {createViewer} from "./pdfview.js";
 import {ico, fileIcon} from "./icons.js";
+import {changesExt, changeList, refreshChanges, authorColor} from "./changes.js";
+import {authorId, decide as chDecide, parseChanges, changeAuthors} from "./changes-core.js";
 
 // ---------- Tema claro / oscuro ----------
 let themeHook = null;
@@ -224,7 +226,8 @@ function ghNoticeClicks() {
 
 // Mensaje breve abajo al centro que desaparece solo
 function toast(msg, ms = 6000) {
-  const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; t.setAttribute("role", "status");
+  document.querySelectorAll(".toast.tmsg").forEach(x => x.remove());   // uno a la vez
+  const t = document.createElement("div"); t.className = "toast tmsg"; t.textContent = msg; t.setAttribute("role", "status");
   document.body.appendChild(t); setTimeout(() => t.remove(), ms);
 }
 
@@ -502,7 +505,7 @@ async function project(id) {
   if (!info) { location.hash = ""; return; }
   document.title = info.name;
   $("app").innerHTML = `<div class="proj" id="proj">
-    <div class="top"><a href="#" class="tl" title="Volver a tus proyectos">${logoSvg(30)}</a><a href="#"><button class="gh">${ico("back")} Proyectos</button></a><b title="${esc(info.name)}">${esc(info.name)}</b><button class="gh ntab" id="ntab" title="Abrir este proyecto en otra pestaña (por ejemplo, para ver dos archivos a la vez). Lo que escribas en una aparece en la otra." aria-label="Abrir en otra pestaña">${ico("copy", 14)}</button><small>${esc(name)}</small><span class="vt" role="group" aria-label="Paneles visibles"><button id="vtr" title="Mostrar u ocultar el árbol de archivos">Archivos</button><button id="ved" title="Mostrar u ocultar el código">Código</button><button id="vpdf" title="Mostrar u ocultar el PDF">PDF</button></span><span class="sp"></span><button id="ghb" class="gh">${ico("sync")} <span>GitHub</span><i class="ghdot" hidden></i></button><button id="hb" class="gh">${ico("history")} Historial</button><button id="ab" class="gh">${ico("sparkles")} Asistente</button><button class="dk gh" id="dkp"></button><span class="mnw"><button id="mn" class="gh" title="Más opciones" aria-haspopup="true">${ico("more", 18)}</button><div class="mnp" id="mnp" hidden><button id="sp" title="Corrector ortográfico">Ortografía</button><button id="save">Guardar versión con nombre</button><button id="zp" title="Descargar todo el proyecto como .zip (para Overleaf, una revista o un coautor)">Descargar el proyecto (.zip)</button><button id="axp" title="Un .zip listo para subir a arXiv: solo lo que usa el documento, con el .bbl y sin comentarios">Preparar para arXiv…</button><button id="ghp" title="Repositorio, coautores y cuenta de GitHub">GitHub…</button><button id="snp" title="Abreviaturas que se expanden con Tab">Snippets…</button><button id="kb">Atajos de teclado</button></div></span></div>
+    <div class="top"><a href="#" class="tl" title="Volver a tus proyectos">${logoSvg(30)}</a><a href="#"><button class="gh">${ico("back")} Proyectos</button></a><b title="${esc(info.name)}">${esc(info.name)}</b><button class="gh ntab" id="ntab" title="Abrir este proyecto en otra pestaña (por ejemplo, para ver dos archivos a la vez). Lo que escribas en una aparece en la otra." aria-label="Abrir en otra pestaña">${ico("copy", 14)}</button><small>${esc(name)}</small><span class="vt" role="group" aria-label="Paneles visibles"><button id="vtr" title="Mostrar u ocultar el árbol de archivos">Archivos</button><button id="ved" title="Mostrar u ocultar el código">Código</button><button id="vpdf" title="Mostrar u ocultar el PDF">PDF</button></span><span class="sp"></span><button id="sgb" class="gh sgb" title="Sugerir cambios (⌘⇧E): lo que escribas o borres queda marcado con tu color para que tu coautor lo acepte o lo rechace">${ico("pencil", 14)} <span>Sugerir</span></button><button id="chb" class="gh" title="Cambios sugeridos pendientes de aceptar o rechazar">Cambios<b class="chn" hidden></b></button><button id="ghb" class="gh">${ico("sync")} <span>GitHub</span><i class="ghdot" hidden></i></button><button id="hb" class="gh">${ico("history")} Historial</button><button id="ab" class="gh">${ico("sparkles")} Asistente</button><button class="dk gh" id="dkp"></button><span class="mnw"><button id="mn" class="gh" title="Más opciones" aria-haspopup="true">${ico("more", 18)}</button><div class="mnp" id="mnp" hidden><button id="sp" title="Corrector ortográfico">Ortografía</button><button id="save">Guardar versión con nombre</button><button id="zp" title="Descargar todo el proyecto como .zip (para Overleaf, una revista o un coautor)">Descargar el proyecto (.zip)</button><button id="axp" title="Un .zip listo para subir a arXiv: solo lo que usa el documento, con el .bbl y sin comentarios">Preparar para arXiv…</button><button id="ghp" title="Repositorio, coautores y cuenta de GitHub">GitHub…</button><button id="snp" title="Abreviaturas que se expanden con Tab">Snippets…</button><button id="kb">Atajos de teclado</button></div></span></div>
     <nav id="tr"><div class="tabs"><button data-v="f" class="on">Archivos</button><button data-v="o">Esquema</button><button data-v="c" id="cmtab">Comentarios</button></div><div class="bar"><button id="nf">${ico("plus")} Nuevo</button><button id="up">${ico("upload")} Subir</button><input type="file" id="fi" hidden></div><div class="bar"><button id="nd" style="flex:1" title="Crear una carpeta nueva">${ico("folder")} Carpeta</button><button id="ud" style="flex:1" title="Subir una carpeta entera con sus subcarpetas">${ico("upload")} Subir carpeta</button><input type="file" id="fd" hidden webkitdirectory multiple></div><div class="bar"><button id="xr" style="flex:1" title="Referencias sin definir, citas que faltan y archivos que no existen">${ico("link")} Referencias</button><button id="fm" style="flex:1" title="Convertir una imagen de una fórmula en LaTeX (⌘⌥V)">${ico("sigma")} Fórmula</button></div><div class="bar"><button id="rf" style="flex:1" title="Agregar una referencia a tu .bib a partir de un DOI o de un identificador de arXiv">${ico("plus")} Referencia</button><button id="zt" title="Sincronizar con Zotero: traer tu bibliografía desde Zotero de escritorio" aria-label="Sincronizar con Zotero">Z</button><button id="sa" title="Buscar y reemplazar en todo el proyecto (⌘⇧F)" aria-label="Buscar en el proyecto">${ico("search")}</button></div><ul id="tl"></ul><div id="olb" hidden><label><input type="checkbox" id="olst"> Mostrar teoremas, lemas, definiciones…</label></div><ul id="ol" hidden></ul><div id="cmp" hidden><div class="cmh"><button id="cmadd" class="pr" title="Comenta el texto seleccionado en el editor">＋ Comentar selección</button><label><input type="checkbox" id="cmres"> Ver resueltos</label></div><div id="cmnew" hidden></div><ul id="cml"></ul></div></nav>
     <div class="gut" id="g1" role="separator" aria-orientation="vertical" aria-label="Ajustar el ancho del árbol de archivos" tabindex="0" title="Arrastra para cambiar el tamaño · doble clic para restablecer"></div>
     <div id="ed"></div>
@@ -1322,8 +1325,9 @@ async function project(id) {
       token: JSON.stringify({t: pass, n: name}), onSynced: () => { restoreView(path, ydoc); if (!viewer.ready) setTimeout(compile, 300); }});
     prov.awareness.setLocalStateField("user", {name, color, colorLight});
     view = new EditorView({parent: $("ed"), doc: ytext.toString(),
-      extensions: [basicSetup, hlComp.of(themeNow() === "dark" ? darkHL : []), posExt, pdfGutter, StreamLanguage.define(stex), EditorView.lineWrapping, complete, latexFold(), mathHover(), yCollab(ytext, prov.awareness), fileDnD, linkExt, commentsExt(ytext, ydoc), ...(/\.(tex|md|txt)$/i.test(path) ? [spellcheck()] : []), pdfCtx]});
-    ytext.observe(() => { if ($("auto").checked) { clearTimeout(t); t = setTimeout(compile, 4000); } wcSoon(); });
+      extensions: [basicSetup, hlComp.of(themeNow() === "dark" ? darkHL : []), posExt, pdfGutter, StreamLanguage.define(stex), EditorView.lineWrapping, complete, latexFold(), mathHover(), yCollab(ytext, prov.awareness), fileDnD, linkExt, commentsExt(ytext, ydoc), ...(/\.(tex|ltx)$/i.test(path) ? [changesExt({on: () => suggestOn && !histMode, me: () => meId, authors: () => chAuthors, block: m => toast(m, 4500), decided: () => chSoon()})] : []), ...(/\.(tex|md|txt)$/i.test(path) ? [spellcheck()] : []), pdfCtx]});
+    ytext.observe(() => { if ($("auto").checked) { clearTimeout(t); t = setTimeout(compile, 4000); } wcSoon(); chSoon(); });
+    chSoon();
     cmBind(ydoc);
     drawTree();
   }
@@ -1627,6 +1631,111 @@ async function project(id) {
   });
   $("zp").onclick = () => exportZip(id, info.name);
   $("axp").onclick = () => { $("mnp").hidden = true; arxivPanel(); };
+
+  // ---------- Control de cambios ----------
+  // Las marcas van en el texto (\added, \deleted, \replaced del paquete «changes»): viajan por GitHub y el PDF las muestra en color.
+  const meId = authorId(name);
+  let suggestOn = lsGet("sugerir:" + id, false), chAuthors = new Map(), chSummary = {files: []}, chTimer = 0;
+  function chPaintBtn() {
+    $("sgb")?.classList.toggle("on", suggestOn);
+    $("proj")?.classList.toggle("suggesting", suggestOn);
+    const here = view && /\.(tex|ltx)$/i.test(cur || "") ? parseChanges(view.state.doc.toString()).length : 0;
+    const other = chSummary.files.filter(f => f.path !== cur).reduce((n, f) => n + f.n, 0);
+    const b = $("chb")?.querySelector(".chn"); if (b) { b.hidden = !(here + other); b.textContent = here + other; }
+  }
+  async function chFetch() {
+    const r = await api(`/projects/${id}/changes`).catch(() => null);
+    if (!r?.files) return;
+    chSummary = r; const before = JSON.stringify([...chAuthors]);
+    chAuthors = new Map(Object.entries(r.authors || {}));
+    if (view && JSON.stringify([...chAuthors]) !== before) view.dispatch({effects: refreshChanges.of(null)});
+    chPaintBtn(); if (!$("chp")?.hidden) chPanelPaint();
+  }
+  // Muchas teclas seguidas: se repinta el contador al momento y el resumen del proyecto un poco después
+  function chSoon() { chPaintBtn(); if (!$("chp")?.hidden) chPanelPaint(); clearTimeout(chTimer); chTimer = setTimeout(chFetch, 2500); }
+  { const iv = setInterval(chFetch, 30000); const prev = cleanup; cleanup = () => { prev(); clearInterval(iv); clearTimeout(chTimer); }; }
+  chFetch();
+
+  async function toggleSuggest(force) {
+    const on = force ?? !suggestOn;
+    if (on) {
+      const r = await api(`/projects/${id}/changes/setup`, {method: "POST", body: {name}}).catch(() => ({error: "No se pudo contactar con el servidor."}));
+      if (r.error) return alert(r.error);
+      if (r.changed) toast(`Se agregó al preámbulo de ${r.main} el bloque del control de cambios (con tu color).`, 5000);
+    }
+    suggestOn = on; lsSet("sugerir:" + id, on); chPaintBtn(); chFetch();
+    toast(on ? "Sugerir cambios: lo que escribas o borres quedará marcado para que tu coautor lo acepte o lo rechace." : "Sugerir cambios desactivado: ahora editas directamente.", 4500);
+    view?.focus();
+  }
+  $("sgb").onclick = () => toggleSuggest();
+  if (suggestOn) api(`/projects/${id}/changes/setup`, {method: "POST", body: {name}}).catch(() => {});
+  chPaintBtn();
+
+  // Panel de cambios pendientes
+  function chPanel(show = $("chp")?.hidden ?? true) {
+    let p = $("chp");
+    if (!p) { p = document.createElement("aside"); p.id = "chp"; p.className = "chp"; p.hidden = true; $("proj").appendChild(p); }
+    p.hidden = !show; $("chb").classList.toggle("on", show);
+    if (show) { chPanelPaint(); chFetch(); }
+  }
+  $("chb").onclick = () => chPanel();
+  function chPanelPaint() {
+    const p = $("chp"); if (!p || p.hidden) return;
+    const isTex = view && /\.(tex|ltx)$/i.test(cur || "");
+    const list = isTex ? changeList(view.state.doc.toString(), chAuthors) : [];
+    const others = chSummary.files.filter(f => f.path !== cur);
+    const total = list.length + others.reduce((n, f) => n + f.n, 0);
+    const people = new Map(); for (const f of chSummary.files) for (const [a, n] of Object.entries(f.by)) people.set(a, (people.get(a) || 0) + n);
+    const who = a => esc(chAuthors.get(a)?.name || a || "Alguien");
+    const dot = a => `<i class="chdot" style="background:${authorColor(chAuthors, a)}"></i>`;
+    const verb = c => c.type === "added" ? "agregó" : c.type === "deleted" ? "quitó" : "cambió";
+    const show = !/\[final\]\{changes\}/.test(view?.state.doc.toString() || "") ;
+    p.innerHTML = `<header><b>Cambios sugeridos</b><button class="gh" data-a="x" aria-label="Cerrar">${ico("x", 15)}</button></header>
+      <div class="chbody">
+      ${!total ? `<p class="chnone">No hay cambios pendientes.${suggestOn ? "" : " Activa <b>Sugerir</b> (⌘⇧E) para que lo que escribas quede marcado."}</p>` : ""}
+      ${list.length ? `<h4>En ${esc(cur)} <small>${list.length}</small></h4><ul class="chl">${list.map((c, i) => `<li data-i="${i}">
+          <div class="chh">${dot(c.id)}<b>${who(c.id)}</b> ${verb(c)}<span class="sp"></span><button class="gh" data-a="ok" data-i="${i}" title="Aceptar">✓</button><button class="gh" data-a="no" data-i="${i}" title="Rechazar">✕</button></div>
+          <div class="chx">${c.oldText ? `<s>${esc(c.oldText.slice(0, 120))}</s> ` : ""}${c.nwText ? `<ins style="--cc:${authorColor(chAuthors, c.id)}">${esc(c.nwText.slice(0, 120))}</ins>` : ""}</div></li>`).join("")}</ul>
+        <div class="chact"><button data-a="okf">Aceptar todo en este archivo</button><button data-a="nof">Rechazar todo</button></div>` : ""}
+      ${others.length ? `<h4>En otros archivos</h4><ul class="chof">${others.map(f => `<li><a href="#" data-op="${esc(f.path)}">${esc(f.path)}</a> <small>${f.n}</small></li>`).join("")}</ul>` : ""}
+      ${total ? `<h4>Todo el proyecto</h4>
+        ${[...people].map(([a, n]) => `<div class="chpp">${dot(a)}<span>${who(a)} <small>${n}</small></span><button data-a="okp" data-au="${esc(a)}">Aceptar</button><button data-a="nop" data-au="${esc(a)}">Rechazar</button></div>`).join("")}
+        <div class="chact"><button data-a="okall" class="pr">Aceptar todos</button><button data-a="noall">Rechazar todos</button></div>` : ""}
+      <label class="chshow"><input type="checkbox" data-a="show"${show ? " checked" : ""}> Mostrar las marcas en colores en el PDF</label>
+      <p class="rfn">Al aceptar, el cambio pasa al texto; al rechazar, se deshace. Las marcas viajan con GitHub, así que tu coautor ve tus sugerencias y tú las suyas.</p>
+      </div>`;
+  }
+  // Aplicar en el editor varias decisiones a la vez
+  function chApply(list, accept) {
+    if (!view || !list.length) return;
+    const t = view.state.doc.toString();
+    view.dispatch({changes: list.map(c => chDecide(t, c, accept)), userEvent: "changes.decide"});
+    chSoon();
+  }
+  document.addEventListener("click", function chClick(e) {
+    const p = $("chp"); if (!p) { if (!$("proj")) document.removeEventListener("click", chClick); return; }
+    if (!p.contains(e.target)) return;
+    const el = e.target.closest("[data-a],[data-op],li[data-i]"); if (!el) return;
+    const a = el.dataset.a, t = view?.state.doc.toString() || "", list = t ? parseChanges(t) : [];
+    if (el.dataset.op) { e.preventDefault(); open(el.dataset.op); return; }
+    if (a === "x") return chPanel(false);
+    if (a === "show") return;
+    if (a === "ok" || a === "no") return chApply([list[+el.dataset.i]].filter(Boolean), a === "ok");
+    if (a === "okf" || a === "nof") { if (a === "nof" && !confirm(`¿Rechazar los ${list.length} cambios de este archivo?`)) return; return chApply(list, a === "okf"); }
+    if (["okp", "nop", "okall", "noall"].includes(a)) {
+      const au = el.dataset.au, acc = a.startsWith("ok"), n = au ? chSummary.files.reduce((s, f) => s + (f.by[au] || 0), 0) : chSummary.files.reduce((s, f) => s + f.n, 0);
+      if (!confirm(`¿${acc ? "Aceptar" : "Rechazar"} ${plural(n, "cambio", "cambios")}${au ? ` de ${chAuthors.get(au)?.name || au}` : ""} en todo el proyecto?`)) return;
+      api(`/projects/${id}/changes/decide`, {method: "POST", body: {accept: acc, author: au || undefined}}).then(r => { if (r.error) alert(r.error); else toast(`${acc ? "Aceptados" : "Rechazados"}: ${plural(r.n, "cambio", "cambios")}.`); chFetch(); });
+      return;
+    }
+    const li = e.target.closest("li[data-i]");
+    if (li && !e.target.closest("button")) { const c = list[+li.dataset.i]; if (c) { view.dispatch({selection: {anchor: c.from + 1}, effects: EditorView.scrollIntoView(c.from, {y: "center"})}); view.focus(); } }
+  });
+  document.addEventListener("change", function chChange(e) {
+    if (!$("chp")) { if (!$("proj")) document.removeEventListener("change", chChange); return; }
+    if (e.target.dataset?.a !== "show" || !$("chp").contains(e.target)) return;
+    api(`/projects/${id}/changes/setup`, {method: "POST", body: {name, show: e.target.checked}}).then(r => { if (r.error) alert(r.error); else toast(e.target.checked ? "El PDF mostrará las marcas en colores." : "El PDF mostrará el texto como quedaría al aceptar todo."); });
+  });
   // Preparar el envío a arXiv
   function arxivPanel() {
     const o = lsGet("arxivOpc", {strip: true, flat: false, bib: false});
@@ -2691,6 +2800,7 @@ async function project(id) {
     ["Cursiva  \\textit{ }", `${M}I`, e => e.key.toLowerCase() === "i" && !e.shiftKey && !e.altKey, () => wrap("textit")],
     ["Énfasis  \\emph{ }", `${M}E`, e => e.key.toLowerCase() === "e" && !e.shiftKey && !e.altKey, () => wrap("emph")],
     ["Buscar y reemplazar en todo el proyecto", `${M}${S}F`, e => e.code === "KeyF" && e.shiftKey && !e.altKey, () => { searchAll(); return true; }],
+    ["Sugerir cambios (control de cambios)", `${M}${S}E`, e => e.code === "KeyE" && e.shiftKey && !e.altKey, () => { toggleSuggest(); return true; }],
     ["Comentar el texto seleccionado", `${M}⌥M`, e => e.code === "KeyM" && e.altKey && !e.shiftKey, () => { addComment(); return true; }],
     ["Convertir una imagen en fórmula LaTeX", `${M}⌥V`, e => e.code === "KeyV" && e.altKey && !e.shiftKey, () => { formulaDialog(); return true; }],
     ["Ver referencias, citas y archivos con problemas", `${M}${S}R`, e => e.code === "KeyR" && e.shiftKey && !e.altKey, () => { xrefPanel(); return true; }],
