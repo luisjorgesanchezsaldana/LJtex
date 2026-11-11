@@ -12,7 +12,24 @@ import {join, dirname} from "path";
 import {randomUUID} from "crypto";
 
 const BIN = process.env.CLAUDE_BIN || "claude";
-const TIMEOUT = (+process.env.AGENT_TIMEOUT_MIN || 8) * 60e3;
+// Límites de tiempo del asistente, en minutos: se corta si pasa AGENT_IDLE_MIN sin dar señales de vida (por defecto 3) o si en total
+// pasa de AGENT_TIMEOUT_MIN (por defecto 30, es el tope absoluto). Mientras el programa siga escribiendo, no se corta por inactividad.
+export const agentLimits = (env = process.env) => {
+  const maxMin = +env.AGENT_TIMEOUT_MIN > 0 ? +env.AGENT_TIMEOUT_MIN : 30;
+  const idleMin = Math.min(+env.AGENT_IDLE_MIN > 0 ? +env.AGENT_IDLE_MIN : 3, maxMin);
+  return {idleMs: idleMin * 60e3, maxMs: maxMin * 60e3};
+};
+const {idleMs: IDLE, maxMs: TIMEOUT} = agentLimits();
+const dur = ms => ms >= 60e3 ? (m => `${m} ${m === 1 ? "minuto" : "minutos"}`)(+(ms / 60e3).toFixed(1)) : `${Math.round(ms / 1e3)} segundos`;
+// Vigilante: onIdle si pasa idleMs sin ping(), onMax si pasan maxMs desde el inicio. Se dispara una sola vez; stop() lo desactiva.
+export function watchdog({idleMs, maxMs, onIdle, onMax}) {
+  let idle, max, done = false;
+  const stop = () => { done = true; clearTimeout(idle); clearTimeout(max); };
+  const ping = () => { if (done) return; clearTimeout(idle); idle = setTimeout(() => { if (!done) { stop(); onIdle(); } }, idleMs); };
+  max = setTimeout(() => { if (!done) { stop(); onMax(); } }, maxMs);
+  ping();
+  return {ping, stop};
+}
 const MAX_BIN = 20e6;                      // PDF e imágenes que se le prestan al asistente para leer, en total
 const READABLE = /\.(pdf|png|jpe?g|gif|webp)$/i;
 const MAX_FILE = 1e6;                       // no se manda al agente ningún archivo de texto mayor de 1 MB
@@ -242,7 +259,7 @@ export function registerAgent(app, h) {
     job.proc = proc;
     let deferred = false;
     const end = () => {
-      if (finished) return; finished = true; clearTimeout(timer); running = null;
+      if (finished) return; finished = true; wd.stop(); running = null;
       try {
         if (job.state === "running" || job.state === "stopping") {
           if (job.state === "stopping") job.state = "cancelled";
@@ -282,10 +299,12 @@ export function registerAgent(app, h) {
       rmSync(dir, {recursive: true, force: true});
       delete job.proc;
     };
-    const timer = setTimeout(() => { job.error = `El asistente tardó más de ${TIMEOUT / 60e3} minutos y se detuvo.`; proc.kill("SIGKILL"); }, TIMEOUT);
+    const wd = watchdog({idleMs: IDLE, maxMs: TIMEOUT,
+      onIdle: () => { job.error = `El asistente dejó de responder durante ${dur(IDLE)} y se detuvo.`; proc.kill("SIGKILL"); },
+      onMax: () => { job.error = `El asistente tardó más de ${dur(TIMEOUT)} en total y se detuvo.`; proc.kill("SIGKILL"); }});
 
     proc.stdout.on("data", d => {
-      buf += d; let i;
+      wd.ping(); buf += d; let i;
       while ((i = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
         if (!line) continue;
@@ -317,7 +336,7 @@ export function registerAgent(app, h) {
         }
       }
     });
-    proc.stderr.on("data", d => { err = (err + d).slice(-2000); });
+    proc.stderr.on("data", d => { wd.ping(); err = (err + d).slice(-2000); });
     proc.on("error", e => { job.error = e.code === "ENOENT" ? "No encuentro el programa «claude»." : "No pude ejecutar «claude»: " + e.message; end(); });
     proc.on("close", code => {
       if (code && !job.error && job.state === "running") job.error = (/log ?in|auth|credential|401/i.test(err + job.text)
