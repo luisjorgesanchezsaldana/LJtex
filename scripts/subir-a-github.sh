@@ -6,7 +6,7 @@ set -e
 cd "$(dirname "$0")/.."
 REPO="https://github.com/luisjorgesanchezsaldana/LJtex.git"
 git --version > /dev/null 2>&1 || { echo "Falta git. Instálalo con:  xcode-select --install   y vuelve a correr este script."; exit 1; }
-[ -f "$HOME/.ljtex/github.json" ] || { echo "Primero conecta LJtex con GitHub (botón GitHub dentro de un proyecto)."; exit 1; }
+{ [ -f "$HOME/.ljtex/github.json" ] || security find-generic-password -s "LJtex GitHub" -a ljtex > /dev/null 2>&1; } || { echo "Primero conecta LJtex con GitHub (botón GitHub dentro de un proyecto)."; exit 1; }
 [ -d .git ] || git init -q -b main
 git config --unset-all credential.helper > /dev/null 2>&1 || true
 git config --add credential.helper ""   # ignora otras claves guardadas en el llavero de la Mac
